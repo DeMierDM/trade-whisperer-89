@@ -39,11 +39,14 @@ const Trading = () => {
 
       if (error) throw error;
 
-      if (data?.quote) {
+      if (data?.data?.quote) {
+        const quote = data.data.quote;
         setMarketData({
-          price: data.quote.ap || 0,
-          change: data.quote.ap - data.quote.prevclose || 0,
-          changePercent: ((data.quote.ap - data.quote.prevclose) / data.quote.prevclose) * 100 || 0,
+          price: quote.ap || 0,
+          change: quote.ap - (quote.prevclose || quote.ap) || 0,
+          changePercent: quote.prevclose 
+            ? ((quote.ap - quote.prevclose) / quote.prevclose) * 100 
+            : 0,
         });
       }
     } catch (error: any) {
@@ -58,6 +61,7 @@ const Trading = () => {
   };
 
   const fetchOptionsChain = async () => {
+    setLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("fetch-market-data", {
         body: { dataType: "options", symbol: selectedSymbol },
@@ -65,23 +69,30 @@ const Trading = () => {
 
       if (error) throw error;
 
-      if (data?.results) {
+      if (data?.data && Array.isArray(data.data)) {
         // Transform API data to match UI format
-        const formattedOptions: OptionData[] = data.results.slice(0, 6).map((opt: any) => ({
-          strike: `${opt.details.strike_price}${opt.details.contract_type}`,
-          bid: opt.day?.close?.toFixed(2) || "0.00",
-          ask: opt.day?.close ? (opt.day.close * 1.01).toFixed(2) : "0.00",
-          vol: opt.day?.volume ? `${(opt.day.volume / 1000).toFixed(1)}K` : "0K",
+        const formattedOptions: OptionData[] = data.data.slice(0, 20).map((opt: any) => ({
+          strike: `${opt.strike_price || opt.details?.strike_price || 0}${opt.contract_type || opt.details?.contract_type || 'C'}`,
+          bid: "0.00", // Historical data doesn't have real-time bid/ask
+          ask: "0.00",
+          vol: "0K",
           oi: opt.open_interest ? `${(opt.open_interest / 1000).toFixed(1)}K` : "0K",
-          delta: opt.greeks?.delta?.toFixed(2) || "0.00",
-          itm: opt.details.contract_type === "call" 
-            ? opt.details.strike_price < (marketData?.price || 0)
-            : opt.details.strike_price > (marketData?.price || 0),
+          delta: "0.00",
+          itm: false,
         }));
         setOptionsData(formattedOptions);
+      } else {
+        setOptionsData([]);
       }
     } catch (error: any) {
       console.error("Error fetching options chain:", error);
+      toast({
+        title: "Error fetching options data",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
     }
   };
 
