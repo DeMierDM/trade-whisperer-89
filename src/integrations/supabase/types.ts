@@ -14,7 +14,147 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      api_keys: {
+        Row: {
+          api_key: string
+          api_secret: string | null
+          created_at: string | null
+          id: string
+          is_connected: boolean | null
+          last_tested_at: string | null
+          mode: Database["public"]["Enums"]["trading_mode"] | null
+          provider: Database["public"]["Enums"]["api_provider"]
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          api_key: string
+          api_secret?: string | null
+          created_at?: string | null
+          id?: string
+          is_connected?: boolean | null
+          last_tested_at?: string | null
+          mode?: Database["public"]["Enums"]["trading_mode"] | null
+          provider: Database["public"]["Enums"]["api_provider"]
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          api_key?: string
+          api_secret?: string | null
+          created_at?: string | null
+          id?: string
+          is_connected?: boolean | null
+          last_tested_at?: string | null
+          mode?: Database["public"]["Enums"]["trading_mode"] | null
+          provider?: Database["public"]["Enums"]["api_provider"]
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      risk_controls: {
+        Row: {
+          auto_kill_data_loss_seconds: number | null
+          auto_kill_pnl_spike_pct: number | null
+          created_at: string | null
+          daily_loss_limit_usd: number | null
+          id: string
+          max_drawdown_pct: number | null
+          max_hold_time_minutes: number | null
+          max_position_size_usd: number | null
+          max_positions: number | null
+          max_spread_cents: number | null
+          min_open_interest: number | null
+          monthly_loss_limit_usd: number | null
+          pre_expiry_close_minutes: number | null
+          trading_end_time: string | null
+          trading_start_time: string | null
+          updated_at: string | null
+          user_id: string
+          weekly_loss_limit_usd: number | null
+        }
+        Insert: {
+          auto_kill_data_loss_seconds?: number | null
+          auto_kill_pnl_spike_pct?: number | null
+          created_at?: string | null
+          daily_loss_limit_usd?: number | null
+          id?: string
+          max_drawdown_pct?: number | null
+          max_hold_time_minutes?: number | null
+          max_position_size_usd?: number | null
+          max_positions?: number | null
+          max_spread_cents?: number | null
+          min_open_interest?: number | null
+          monthly_loss_limit_usd?: number | null
+          pre_expiry_close_minutes?: number | null
+          trading_end_time?: string | null
+          trading_start_time?: string | null
+          updated_at?: string | null
+          user_id: string
+          weekly_loss_limit_usd?: number | null
+        }
+        Update: {
+          auto_kill_data_loss_seconds?: number | null
+          auto_kill_pnl_spike_pct?: number | null
+          created_at?: string | null
+          daily_loss_limit_usd?: number | null
+          id?: string
+          max_drawdown_pct?: number | null
+          max_hold_time_minutes?: number | null
+          max_position_size_usd?: number | null
+          max_positions?: number | null
+          max_spread_cents?: number | null
+          min_open_interest?: number | null
+          monthly_loss_limit_usd?: number | null
+          pre_expiry_close_minutes?: number | null
+          trading_end_time?: string | null
+          trading_start_time?: string | null
+          updated_at?: string | null
+          user_id?: string
+          weekly_loss_limit_usd?: number | null
+        }
+        Relationships: []
+      }
+      strategy_defaults: {
+        Row: {
+          created_at: string | null
+          ema_length: number | null
+          entry_deviation_pct: number | null
+          id: string
+          min_slope: number | null
+          near_deviation_pct: number | null
+          rv_cap_bps: number | null
+          time_stop_bars: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          ema_length?: number | null
+          entry_deviation_pct?: number | null
+          id?: string
+          min_slope?: number | null
+          near_deviation_pct?: number | null
+          rv_cap_bps?: number | null
+          time_stop_bars?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          ema_length?: number | null
+          entry_deviation_pct?: number | null
+          id?: string
+          min_slope?: number | null
+          near_deviation_pct?: number | null
+          rv_cap_bps?: number | null
+          time_stop_bars?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +163,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      api_provider: "polygon" | "alpaca" | "openai"
+      trading_mode: "paper" | "live"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +291,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      api_provider: ["polygon", "alpaca", "openai"],
+      trading_mode: ["paper", "live"],
+    },
   },
 } as const
