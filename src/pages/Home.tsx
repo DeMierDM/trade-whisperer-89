@@ -1,13 +1,160 @@
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Activity, TrendingUp, BarChart3, Settings, Brain, History } from "lucide-react";
+import { Activity, TrendingUp, BarChart3, Settings, Brain, History, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const Home = () => {
+  const { toast } = useToast();
+  const [loading, setLoading] = useState(true);
+  const [accountData, setAccountData] = useState({
+    balance: "$0.00",
+    dailyPnL: "$0.00",
+    dailyPnLPercent: "0.0%",
+    openPositions: "0",
+    positionsITM: "0",
+    winRate: "0.0%",
+  });
+
+  useEffect(() => {
+    fetchAccountData();
+    
+    // Refresh every 30 seconds
+    const interval = setInterval(fetchAccountData, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const fetchAccountData = async () => {
+    try {
+      // Fetch account and positions data
+      const { data: accountResponse, error: accountError } = await supabase.functions.invoke("fetch-market-data", {
+        body: { dataType: "account" },
+      });
+
+      if (accountError) throw accountError;
+
+      if (accountResponse?.data) {
+        const account = accountResponse.data.account;
+        const positions = accountResponse.data.positions || [];
+
+        // Calculate daily P&L
+        const equity = parseFloat(account.equity || 0);
+        const lastEquity = parseFloat(account.last_equity || equity);
+        const dailyPnL = equity - lastEquity;
+        const dailyPnLPercent = lastEquity > 0 ? (dailyPnL / lastEquity) * 100 : 0;
+
+        // Count ITM positions (simplified - would need current prices for accurate calc)
+        const itmCount = positions.filter((p: any) => parseFloat(p.unrealized_pl || 0) > 0).length;
+
+        setAccountData({
+          balance: `$${parseFloat(account.equity || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          dailyPnL: `${dailyPnL >= 0 ? '+' : ''}$${Math.abs(dailyPnL).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
+          dailyPnLPercent: `${dailyPnL >= 0 ? '+' : ''}${dailyPnLPercent.toFixed(1)}%`,
+          openPositions: positions.length.toString(),
+          positionsITM: `${itmCount} ITM`,
+          winRate: "Calculating...",
+        });
+
+        // Fetch order history for win rate
+        fetchWinRate();
+      }
+
+      setLoading(false);
+    } catch (error: any) {
+      console.error("Error fetching account data:", error);
+      toast({
+        title: "Error loading account data",
+        description: error.message,
+        variant: "destructive",
+      });
+      setLoading(false);
+    }
+  };
+
+  const fetchWinRate = async () => {
+    try {
+      const { data: ordersResponse, error: ordersError } = await supabase.functions.invoke("fetch-market-data", {
+        body: { dataType: "orders" },
+      });
+
+      if (ordersError) throw ordersError;
+
+      if (ordersResponse?.data && Array.isArray(ordersResponse.data)) {
+        const closedOrders = ordersResponse.data.filter((o: any) => o.status === 'filled');
+        
+        // Group orders into trades (buy + sell pairs)
+        const trades: any[] = [];
+        const ordersBySymbol: { [key: string]: any[] } = {};
+        
+        closedOrders.forEach((order: any) => {
+          const symbol = order.symbol;
+          if (!ordersBySymbol[symbol]) ordersBySymbol[symbol] = [];
+          ordersBySymbol[symbol].push(order);
+        });
+
+        // Calculate wins vs losses
+        let wins = 0;
+        let losses = 0;
+
+        Object.values(ordersBySymbol).forEach((orders: any[]) => {
+          orders.sort((a, b) => new Date(a.filled_at).getTime() - new Date(b.filled_at).getTime());
+          
+          for (let i = 0; i < orders.length - 1; i += 2) {
+            const entry = orders[i];
+            const exit = orders[i + 1];
+            
+            if (entry && exit) {
+              const entryPrice = parseFloat(entry.filled_avg_price || 0);
+              const exitPrice = parseFloat(exit.filled_avg_price || 0);
+              const pnl = entry.side === 'buy' 
+                ? (exitPrice - entryPrice) * parseFloat(entry.filled_qty || 0)
+                : (entryPrice - exitPrice) * parseFloat(entry.filled_qty || 0);
+              
+              if (pnl > 0) wins++;
+              else if (pnl < 0) losses++;
+            }
+          }
+        });
+
+        const totalTrades = wins + losses;
+        const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
+
+        setAccountData(prev => ({
+          ...prev,
+          winRate: `${winRate.toFixed(1)}%`,
+        }));
+      }
+    } catch (error: any) {
+      console.error("Error fetching win rate:", error);
+    }
+  };
+
   const stats = [
-    { label: "Account Balance", value: "$125,430.52", change: "+2.3%", positive: true },
-    { label: "Daily P&L", value: "$2,847.20", change: "+1.8%", positive: true },
-    { label: "Open Positions", value: "7", change: "3 ITM", positive: true },
-    { label: "Win Rate", value: "68.4%", change: "Last 30 days", positive: true },
+    { 
+      label: "Account Balance", 
+      value: accountData.balance, 
+      change: accountData.dailyPnLPercent, 
+      positive: accountData.dailyPnL.startsWith('+') 
+    },
+    { 
+      label: "Daily P&L", 
+      value: accountData.dailyPnL, 
+      change: accountData.dailyPnLPercent, 
+      positive: accountData.dailyPnL.startsWith('+') 
+    },
+    { 
+      label: "Open Positions", 
+      value: accountData.openPositions, 
+      change: accountData.positionsITM, 
+      positive: true 
+    },
+    { 
+      label: "Win Rate", 
+      value: accountData.winRate, 
+      change: "Last 30 days", 
+      positive: true 
+    },
   ];
 
   const quickActions = [
@@ -16,6 +163,14 @@ const Home = () => {
     { icon: Brain, label: "Tune Strategy", href: "/tuning", color: "accent" },
     { icon: Settings, label: "Settings", href: "/settings", color: "secondary" },
   ];
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">

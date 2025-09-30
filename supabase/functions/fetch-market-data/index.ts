@@ -136,6 +136,74 @@ serve(async (req) => {
         JSON.stringify({ data }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
+    } else if (dataType === 'account' && alpacaKey) {
+      // Fetch account data from Alpaca
+      const baseUrl = alpacaKey.mode === 'paper' 
+        ? 'https://paper-api.alpaca.markets' 
+        : 'https://api.alpaca.markets';
+      
+      // Fetch account info
+      const accountResponse = await fetch(`${baseUrl}/v2/account`, {
+        headers: {
+          'APCA-API-KEY-ID': alpacaKey.api_key,
+          'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+        },
+      });
+
+      if (!accountResponse.ok) {
+        throw new Error(`Alpaca API error: ${await accountResponse.text()}`);
+      }
+
+      const accountData = await accountResponse.json();
+      
+      // Fetch positions
+      const positionsResponse = await fetch(`${baseUrl}/v2/positions`, {
+        headers: {
+          'APCA-API-KEY-ID': alpacaKey.api_key,
+          'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+        },
+      });
+      
+      const positions = positionsResponse.ok ? await positionsResponse.json() : [];
+      
+      return new Response(
+        JSON.stringify({ 
+          data: {
+            account: accountData,
+            positions: positions
+          }
+        }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else if (dataType === 'orders' && alpacaKey) {
+      // Fetch order history for win rate calculation
+      const baseUrl = alpacaKey.mode === 'paper' 
+        ? 'https://paper-api.alpaca.markets' 
+        : 'https://api.alpaca.markets';
+      
+      const after = new Date();
+      after.setDate(after.getDate() - 30); // Last 30 days
+      
+      const response = await fetch(
+        `${baseUrl}/v2/orders?status=closed&after=${after.toISOString()}&limit=500`,
+        {
+          headers: {
+            'APCA-API-KEY-ID': alpacaKey.api_key,
+            'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+          },
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(`Alpaca API error: ${await response.text()}`);
+      }
+
+      const data = await response.json();
+      
+      return new Response(
+        JSON.stringify({ data }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     } else {
       throw new Error('Invalid dataType or missing API keys');
     }
