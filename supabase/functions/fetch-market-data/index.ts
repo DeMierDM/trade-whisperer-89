@@ -42,15 +42,10 @@ serve(async (req) => {
     const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca');
 
     if (dataType === 'options' && polygonKey) {
-      // Fetch options chain from Polygon
-      const today = new Date();
-      const nextMonth = new Date(today);
-      nextMonth.setMonth(nextMonth.getMonth() + 1);
-      
-      const expirationDate = nextMonth.toISOString().split('T')[0];
-      
+      // Fetch historical options contracts from Polygon (Options Starter plan)
+      // Get all available contracts for backtesting
       const response = await fetch(
-        `https://api.polygon.io/v3/reference/options/contracts?underlying_ticker=${symbol}&expiration_date=${expirationDate}&limit=100&apiKey=${polygonKey.api_key}`
+        `https://api.polygon.io/v3/reference/options/contracts?underlying_ticker=${symbol}&limit=1000&apiKey=${polygonKey.api_key}`
       );
 
       if (!response.ok) {
@@ -61,6 +56,28 @@ serve(async (req) => {
       
       return new Response(
         JSON.stringify({ data: data.results }),
+        { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    } else if (dataType === 'historical-options' && polygonKey) {
+      // Fetch historical minute/day aggregates for a specific options contract
+      const { contract, timeframe = '1', from, to } = await req.json();
+      
+      if (!contract) {
+        throw new Error('Contract ticker required for historical options data');
+      }
+      
+      const response = await fetch(
+        `https://api.polygon.io/v2/aggs/ticker/${contract}/range/${timeframe}/minute/${from}/${to}?adjusted=true&sort=asc&limit=50000&apiKey=${polygonKey.api_key}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`Polygon API error: ${await response.text()}`);
+      }
+
+      const data = await response.json();
+      
+      return new Response(
+        JSON.stringify({ data }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else if (dataType === 'quote' && alpacaKey) {
