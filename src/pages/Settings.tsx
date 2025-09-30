@@ -10,8 +10,10 @@ import { useApiKeys } from "@/hooks/useApiKeys";
 import { useRiskControls } from "@/hooks/useRiskControls";
 import { useStrategyDefaults } from "@/hooks/useStrategyDefaults";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
 
 const Settings = () => {
+  const { toast } = useToast();
   const { apiKeys, loading: apiKeysLoading, testConnection, refetch: refetchApiKeys } = useApiKeys();
   const { controls, loading: controlsLoading, saveControls } = useRiskControls();
   const { defaults, loading: defaultsLoading, saveDefaults } = useStrategyDefaults();
@@ -89,12 +91,25 @@ const Settings = () => {
 
       const { error } = await supabase
         .from("api_keys")
-        .upsert(keyData);
+        .upsert(keyData, {
+          onConflict: 'user_id,provider'
+        });
 
       if (error) throw error;
+      
+      toast({
+        title: "API key saved",
+        description: `Your ${provider} API key has been saved successfully`,
+      });
+      
       await refetchApiKeys();
     } catch (error: any) {
       console.error("Error saving API key:", error);
+      toast({
+        title: "Error saving API key",
+        description: error.message,
+        variant: "destructive",
+      });
     }
   };
 

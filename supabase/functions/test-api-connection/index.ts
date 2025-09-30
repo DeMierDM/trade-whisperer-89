@@ -90,6 +90,8 @@ serve(async (req) => {
         mode,
         is_connected: isConnected,
         last_tested_at: new Date().toISOString(),
+      }, {
+        onConflict: 'user_id,provider'
       });
 
     if (updateError) {
