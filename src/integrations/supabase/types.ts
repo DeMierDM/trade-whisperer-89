@@ -53,6 +53,143 @@ export type Database = {
         }
         Relationships: []
       }
+      backtest_runs: {
+        Row: {
+          avg_loss: number | null
+          avg_win: number | null
+          commission_per_contract: number
+          completed_at: string | null
+          created_at: string
+          end_date: string
+          error_message: string | null
+          final_equity: number | null
+          id: string
+          initial_capital: number
+          max_drawdown_pct: number | null
+          profit_factor: number | null
+          sharpe_ratio: number | null
+          slippage_pct: number
+          start_date: string
+          status: string
+          strategy_name: string
+          symbol: string
+          timeframe: string
+          total_return_pct: number | null
+          total_trades: number | null
+          user_id: string
+          win_rate_pct: number | null
+        }
+        Insert: {
+          avg_loss?: number | null
+          avg_win?: number | null
+          commission_per_contract?: number
+          completed_at?: string | null
+          created_at?: string
+          end_date: string
+          error_message?: string | null
+          final_equity?: number | null
+          id?: string
+          initial_capital: number
+          max_drawdown_pct?: number | null
+          profit_factor?: number | null
+          sharpe_ratio?: number | null
+          slippage_pct?: number
+          start_date: string
+          status?: string
+          strategy_name: string
+          symbol: string
+          timeframe: string
+          total_return_pct?: number | null
+          total_trades?: number | null
+          user_id: string
+          win_rate_pct?: number | null
+        }
+        Update: {
+          avg_loss?: number | null
+          avg_win?: number | null
+          commission_per_contract?: number
+          completed_at?: string | null
+          created_at?: string
+          end_date?: string
+          error_message?: string | null
+          final_equity?: number | null
+          id?: string
+          initial_capital?: number
+          max_drawdown_pct?: number | null
+          profit_factor?: number | null
+          sharpe_ratio?: number | null
+          slippage_pct?: number
+          start_date?: string
+          status?: string
+          strategy_name?: string
+          symbol?: string
+          timeframe?: string
+          total_return_pct?: number | null
+          total_trades?: number | null
+          user_id?: string
+          win_rate_pct?: number | null
+        }
+        Relationships: []
+      }
+      backtest_trades: {
+        Row: {
+          backtest_run_id: string
+          commission: number
+          created_at: string
+          entry_price: number
+          entry_time: string
+          exit_price: number
+          exit_time: string
+          id: string
+          pnl: number
+          quantity: number
+          return_pct: number
+          side: string
+          slippage: number
+          symbol: string
+        }
+        Insert: {
+          backtest_run_id: string
+          commission: number
+          created_at?: string
+          entry_price: number
+          entry_time: string
+          exit_price: number
+          exit_time: string
+          id?: string
+          pnl: number
+          quantity: number
+          return_pct: number
+          side: string
+          slippage: number
+          symbol: string
+        }
+        Update: {
+          backtest_run_id?: string
+          commission?: number
+          created_at?: string
+          entry_price?: number
+          entry_time?: string
+          exit_price?: number
+          exit_time?: string
+          id?: string
+          pnl?: number
+          quantity?: number
+          return_pct?: number
+          side?: string
+          slippage?: number
+          symbol?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "backtest_trades_backtest_run_id_fkey"
+            columns: ["backtest_run_id"]
+            isOneToOne: false
+            referencedRelation: "backtest_runs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string | null
@@ -172,6 +309,36 @@ export type Database = {
           rv_cap_bps?: number | null
           time_stop_bars?: number | null
           updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      strategy_parameters: {
+        Row: {
+          created_at: string
+          id: string
+          is_default: boolean | null
+          parameters: Json
+          strategy_name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_default?: boolean | null
+          parameters: Json
+          strategy_name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_default?: boolean | null
+          parameters?: Json
+          strategy_name?: string
+          updated_at?: string
           user_id?: string
         }
         Relationships: []

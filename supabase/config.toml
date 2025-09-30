@@ -5,3 +5,12 @@ verify_jwt = true
 
 [functions.fetch-market-data]
 verify_jwt = true
+
+[functions.alpaca-websocket]
+verify_jwt = true
+
+[functions.options-backtester]
+verify_jwt = true
+
+[functions.strategy-optimizer]
+verify_jwt = true
