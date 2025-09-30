@@ -25,42 +25,22 @@ const App = () => (
       <BrowserRouter>
         <Routes>
           <Route path="/auth" element={<Auth />} />
-          <Route path="/" element={
+          <Route path="*" element={
             <ProtectedRoute>
-              <Layout><Home /></Layout>
+              <Layout>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/trading" element={<Trading />} />
+                  <Route path="/backtesting" element={<Backtesting />} />
+                  <Route path="/tuning" element={<Tuning />} />
+                  <Route path="/history" element={<History />} />
+                  <Route path="/settings" element={<Settings />} />
+                  <Route path="/ai" element={<AI />} />
+                  <Route path="*" element={<NotFound />} />
+                </Routes>
+              </Layout>
             </ProtectedRoute>
           } />
-          <Route path="/trading" element={
-            <ProtectedRoute>
-              <Layout><Trading /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/backtesting" element={
-            <ProtectedRoute>
-              <Layout><Backtesting /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/tuning" element={
-            <ProtectedRoute>
-              <Layout><Tuning /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/history" element={
-            <ProtectedRoute>
-              <Layout><History /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/settings" element={
-            <ProtectedRoute>
-              <Layout><Settings /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="/ai" element={
-            <ProtectedRoute>
-              <Layout><AI /></Layout>
-            </ProtectedRoute>
-          } />
-          <Route path="*" element={<NotFound />} />
         </Routes>
       </BrowserRouter>
     </TooltipProvider>
