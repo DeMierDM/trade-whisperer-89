@@ -92,28 +92,45 @@ Deno.serve(async (req) => {
     const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca')?.api_key;
     const alpacaSecret = apiKeys?.find(k => k.provider === 'alpaca')?.api_secret;
 
-    if (!polygonKey || !alpacaKey) {
+    if (!polygonKey || !alpacaKey || !alpacaSecret) {
       throw new Error('Missing API keys');
     }
 
-    // Fetch historical underlying data from Alpaca
-    const alpacaBaseUrl = Deno.env.get('alpaca_base_url') || 'https://paper-api.alpaca.markets';
+    // Fetch historical underlying data from Alpaca Data API
+    // Note: Use data.alpaca.markets for historical data, not trading API
+    const alpacaDataUrl = 'https://data.alpaca.markets';
+    
+    // Format dates as RFC3339 for Alpaca API
+    const startDateTime = `${config.startDate}T09:30:00Z`;
+    const endDateTime = `${config.endDate}T16:00:00Z`;
+    
+    console.log(`Fetching bars for ${config.symbol} from ${startDateTime} to ${endDateTime}`);
+    
     const underlyingResponse = await fetch(
-      `${alpacaBaseUrl}/v2/stocks/${config.symbol}/bars?timeframe=${config.timeframe}&start=${config.startDate}&end=${config.endDate}`,
+      `${alpacaDataUrl}/v2/stocks/${config.symbol}/bars?timeframe=${config.timeframe}&start=${startDateTime}&end=${endDateTime}&limit=10000`,
       {
         headers: {
           'APCA-API-KEY-ID': alpacaKey,
-          'APCA-API-SECRET-KEY': alpacaSecret!,
+          'APCA-API-SECRET-KEY': alpacaSecret,
         },
       }
     );
 
     if (!underlyingResponse.ok) {
-      throw new Error(`Failed to fetch underlying data: ${await underlyingResponse.text()}`);
+      const errorText = await underlyingResponse.text();
+      console.error('Alpaca API error:', errorText);
+      throw new Error(`Failed to fetch underlying data: ${underlyingResponse.status} - ${errorText}`);
     }
 
     const underlyingData = await underlyingResponse.json();
-    console.log(`Fetched ${underlyingData.bars?.length || 0} bars for ${config.symbol}`);
+    
+    if (!underlyingData.bars || !underlyingData.bars[config.symbol]) {
+      console.error('No bars returned:', underlyingData);
+      throw new Error(`No bar data available for ${config.symbol}`);
+    }
+    
+    const bars = underlyingData.bars[config.symbol];
+    console.log(`Fetched ${bars.length} bars for ${config.symbol}`);
 
     // Fetch strategy parameters
     const { data: strategyParams } = await supabase
@@ -129,13 +146,13 @@ Deno.serve(async (req) => {
     let maxDrawdown = 0;
     let position: any = null;
 
-    for (let i = 0; i < (underlyingData.bars?.length || 0); i++) {
-      const bar = underlyingData.bars[i];
+    for (let i = 0; i < bars.length; i++) {
+      const bar = bars[i];
       const price = bar.c;
       const timestamp = bar.t;
 
       // Strategy logic based on selected strategy
-      const signal = executeStrategy(config.strategy, bar, strategyParams, i, underlyingData.bars);
+      const signal = executeStrategy(config.strategy, bar, strategyParams, i, bars);
 
       if (signal === 'BUY' && !position) {
         // Entry logic - find ATM option
