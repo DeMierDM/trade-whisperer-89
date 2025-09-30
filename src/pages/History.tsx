@@ -1,10 +1,136 @@
+import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Search, Download, Eye } from "lucide-react";
+import { Search, Download, Eye, Loader2 } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+
+interface Order {
+  id: string;
+  symbol: string;
+  side: 'buy' | 'sell';
+  qty: string;
+  filled_avg_price: string;
+  status: string;
+  filled_at: string;
+  type: string;
+}
 
 const History = () => {
+  const { toast } = useToast();
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  useEffect(() => {
+    fetchOrders();
+  }, []);
+
+  const fetchOrders = async () => {
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("fetch-market-data", {
+        body: { dataType: "orders" },
+      });
+
+      if (error) throw error;
+
+      if (data?.data && Array.isArray(data.data)) {
+        setOrders(data.data);
+      }
+    } catch (error: any) {
+      toast({
+        title: "Error fetching order history",
+        description: error.message,
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredOrders = orders.filter(order => {
+    if (searchTerm && !order.symbol.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+    
+    if (startDate) {
+      const orderDate = new Date(order.filled_at);
+      if (orderDate < new Date(startDate)) return false;
+    }
+    
+    if (endDate) {
+      const orderDate = new Date(order.filled_at);
+      if (orderDate > new Date(endDate)) return false;
+    }
+    
+    return true;
+  });
+
+  const calculateStats = () => {
+    const trades: { [key: string]: Order[] } = {};
+    
+    filteredOrders.forEach(order => {
+      if (!trades[order.symbol]) trades[order.symbol] = [];
+      trades[order.symbol].push(order);
+    });
+
+    let totalPnL = 0;
+    let wins = 0;
+    let losses = 0;
+    let totalWinAmount = 0;
+    let totalLossAmount = 0;
+
+    Object.values(trades).forEach(symbolOrders => {
+      symbolOrders.sort((a, b) => 
+        new Date(a.filled_at).getTime() - new Date(b.filled_at).getTime()
+      );
+      
+      for (let i = 0; i < symbolOrders.length - 1; i += 2) {
+        const entry = symbolOrders[i];
+        const exit = symbolOrders[i + 1];
+        
+        if (entry && exit && entry.status === 'filled' && exit.status === 'filled') {
+          const entryPrice = parseFloat(entry.filled_avg_price);
+          const exitPrice = parseFloat(exit.filled_avg_price);
+          const qty = parseFloat(entry.qty);
+          
+          const pnl = entry.side === 'buy' 
+            ? (exitPrice - entryPrice) * qty
+            : (entryPrice - exitPrice) * qty;
+          
+          totalPnL += pnl;
+          if (pnl > 0) {
+            wins++;
+            totalWinAmount += pnl;
+          } else if (pnl < 0) {
+            losses++;
+            totalLossAmount += Math.abs(pnl);
+          }
+        }
+      }
+    });
+
+    return {
+      totalTrades: wins + losses,
+      winRate: wins + losses > 0 ? (wins / (wins + losses)) * 100 : 0,
+      avgWin: wins > 0 ? totalWinAmount / wins : 0,
+      avgLoss: losses > 0 ? totalLossAmount / losses : 0,
+    };
+  };
+
+  const stats = calculateStats();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto p-6 space-y-4">
@@ -24,85 +150,91 @@ const History = () => {
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input placeholder="Search symbol..." className="pl-10" />
+              <Input 
+                placeholder="Search symbol..." 
+                className="pl-10"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
             </div>
-            <Input type="date" defaultValue="2024-01-01" />
-            <Input type="date" defaultValue="2024-03-28" />
-            <select className="p-2 rounded-lg bg-secondary border border-border text-foreground">
-              <option>All Strategies</option>
-              <option>HAVWAP-Rev-v2</option>
-              <option>Delta-Bucket-Trend</option>
-            </select>
+            <Input 
+              type="date" 
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+            />
+            <Input 
+              type="date"
+              value={endDate}
+              onChange={(e) => setEndDate(e.target.value)}
+            />
+            <Button onClick={fetchOrders} className="w-full">
+              Refresh
+            </Button>
           </div>
         </Card>
 
         {/* Trade List */}
         <Card className="p-6 bg-gradient-card border-border shadow-card">
-          <div className="space-y-2">
-            {[
-              { date: "2024-03-28", time: "14:32", symbol: "SPY 450C 03/28", strategy: "HAVWAP-Rev-v2", entry: "$6.20", exit: "$6.65", qty: "+2", pnl: "+$90", pnlPct: "+7.3%", positive: true, version: "v2.1" },
-              { date: "2024-03-28", time: "11:15", symbol: "QQQ 370P 03/28", strategy: "Delta-Bucket-Trend", entry: "$3.80", exit: "$3.50", qty: "-1", pnl: "+$30", pnlPct: "+7.9%", positive: true, version: "v1.3" },
-              { date: "2024-03-27", time: "15:42", symbol: "SPY 455C 03/29", strategy: "HAVWAP-Rev-v2", entry: "$2.50", exit: "$2.35", qty: "+3", pnl: "-$45", pnlPct: "-6.0%", positive: false, version: "v2.1" },
-              { date: "2024-03-27", time: "13:28", symbol: "IWM 185C 03/29", strategy: "ATM-Scalp-v1", entry: "$1.85", exit: "$2.05", qty: "+5", pnl: "+$100", pnlPct: "+10.8%", positive: true, version: "v1.0" },
-              { date: "2024-03-27", time: "10:05", symbol: "SPY 452P 03/27", strategy: "HAVWAP-Rev-v2", entry: "$5.20", exit: "$5.80", qty: "-2", pnl: "+$120", pnlPct: "+11.5%", positive: true, version: "v2.0" },
-              { date: "2024-03-26", time: "14:55", symbol: "QQQ 375C 03/27", strategy: "Delta-Bucket-Trend", entry: "$4.35", exit: "$4.15", qty: "+1", pnl: "-$20", pnlPct: "-4.6%", positive: false, version: "v1.3" },
-            ].map((trade, idx) => (
-              <div key={idx} className="grid grid-cols-10 gap-3 p-4 rounded-lg bg-secondary/50 border border-border hover:bg-secondary transition-all">
-                <div>
-                  <p className="text-xs text-muted-foreground">Date</p>
-                  <p className="text-sm font-medium">{trade.date}</p>
-                  <p className="text-xs text-muted-foreground">{trade.time}</p>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-xs text-muted-foreground">Symbol</p>
-                  <p className="text-sm font-medium">{trade.symbol}</p>
-                  <Badge variant="outline" className="text-xs mt-1">{trade.qty}</Badge>
-                </div>
-                <div className="col-span-2">
-                  <p className="text-xs text-muted-foreground">Strategy</p>
-                  <p className="text-sm font-medium">{trade.strategy}</p>
-                  <p className="text-xs text-muted-foreground">{trade.version}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Entry</p>
-                  <p className="text-sm font-medium">{trade.entry}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">Exit</p>
-                  <p className="text-sm font-medium">{trade.exit}</p>
-                </div>
-                <div>
-                  <p className="text-xs text-muted-foreground">P&L</p>
-                  <p className={`text-sm font-medium ${trade.positive ? "text-success" : "text-danger"}`}>
-                    {trade.pnl}
-                  </p>
-                  <p className={`text-xs ${trade.positive ? "text-success" : "text-danger"}`}>
-                    {trade.pnlPct}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="sm">
-                    <Eye className="w-4 h-4" />
-                  </Button>
-                </div>
+          <div className="space-y-2 max-h-[600px] overflow-y-auto">
+            {filteredOrders.length === 0 ? (
+              <div className="text-center py-8 text-muted-foreground">
+                No orders found
               </div>
-            ))}
+            ) : (
+              filteredOrders.map((order) => (
+                <div key={order.id} className="grid grid-cols-7 gap-3 p-4 rounded-lg bg-secondary/50 border border-border hover:bg-secondary transition-all">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Symbol</p>
+                    <p className="text-sm font-medium">{order.symbol}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Side</p>
+                    <Badge variant={order.side === 'buy' ? 'default' : 'secondary'}>
+                      {order.side.toUpperCase()}
+                    </Badge>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Qty</p>
+                    <p className="text-sm font-medium">{order.qty}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Price</p>
+                    <p className="text-sm font-medium">${parseFloat(order.filled_avg_price).toFixed(2)}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Status</p>
+                    <Badge variant="outline">{order.status}</Badge>
+                  </div>
+                  <div className="col-span-2">
+                    <p className="text-xs text-muted-foreground">Time</p>
+                    <p className="text-sm">
+                      {order.filled_at ? new Date(order.filled_at).toLocaleString() : '-'}
+                    </p>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         </Card>
 
         {/* Summary Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          {[
-            { label: "Total Trades", value: "147" },
-            { label: "Win Rate", value: "64.2%" },
-            { label: "Avg Win", value: "+$284" },
-            { label: "Avg Loss", value: "-$142" },
-          ].map((stat) => (
-            <Card key={stat.label} className="p-4 bg-gradient-card border-border shadow-card">
-              <p className="text-sm text-muted-foreground">{stat.label}</p>
-              <p className="text-2xl font-bold mt-1">{stat.value}</p>
-            </Card>
-          ))}
+          <Card className="p-4 bg-gradient-card border-border shadow-card">
+            <p className="text-sm text-muted-foreground">Total Trades</p>
+            <p className="text-2xl font-bold mt-1">{stats.totalTrades}</p>
+          </Card>
+          <Card className="p-4 bg-gradient-card border-border shadow-card">
+            <p className="text-sm text-muted-foreground">Win Rate</p>
+            <p className="text-2xl font-bold mt-1">{stats.winRate.toFixed(1)}%</p>
+          </Card>
+          <Card className="p-4 bg-gradient-card border-border shadow-card">
+            <p className="text-sm text-muted-foreground">Avg Win</p>
+            <p className="text-2xl font-bold mt-1 text-success">+${stats.avgWin.toFixed(2)}</p>
+          </Card>
+          <Card className="p-4 bg-gradient-card border-border shadow-card">
+            <p className="text-sm text-muted-foreground">Avg Loss</p>
+            <p className="text-2xl font-bold mt-1 text-danger">-${stats.avgLoss.toFixed(2)}</p>
+          </Card>
         </div>
       </div>
     </div>

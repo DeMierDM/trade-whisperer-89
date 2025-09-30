@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Pause, Square, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useAlpacaWebSocket } from "@/hooks/useAlpacaWebSocket";
 
 interface MarketData {
   price: number;
@@ -29,6 +30,9 @@ const Trading = () => {
   const [marketData, setMarketData] = useState<MarketData | null>(null);
   const [optionsData, setOptionsData] = useState<OptionData[]>([]);
   const [loading, setLoading] = useState(false);
+  
+  // Use WebSocket for live data
+  const { quotes, connected } = useAlpacaWebSocket([selectedSymbol]);
 
   const fetchMarketData = async () => {
     setLoading(true);
@@ -96,15 +100,25 @@ const Trading = () => {
     }
   };
 
+  // Update market data from WebSocket
   useEffect(() => {
-    fetchMarketData();
+    const quote = quotes.get(selectedSymbol);
+    if (quote) {
+      const midPrice = (quote.ask + quote.bid) / 2;
+      setMarketData({
+        price: midPrice,
+        change: 0, // Would need previous close data
+        changePercent: 0,
+      });
+    }
+  }, [quotes, selectedSymbol]);
+
+  useEffect(() => {
+    // Fetch initial options chain data (historical)
     fetchOptionsChain();
     
-    // Refresh every 30 seconds
-    const interval = setInterval(() => {
-      fetchMarketData();
-      fetchOptionsChain();
-    }, 30000);
+    // Refresh options every 5 minutes (these are historical, not live)
+    const interval = setInterval(fetchOptionsChain, 300000);
 
     return () => clearInterval(interval);
   }, [selectedSymbol]);
