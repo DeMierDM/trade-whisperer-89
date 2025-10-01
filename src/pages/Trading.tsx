@@ -137,15 +137,21 @@ const Trading = () => {
     try {
       console.log('Fetching last 30 days of minute bars for', selectedSymbol);
       
-      const end = new Date();
-      const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+      // Current time in UTC
+      const now = new Date();
+      
+      // Get last 30 days - use UTC timestamps to avoid timezone issues
+      const end = now.toISOString();
+      const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      
+      console.log('Date range:', { start, end });
       
       const { data, error } = await supabase.functions.invoke("fetch-market-data", {
         body: { 
           dataType: "bars", 
           symbol: selectedSymbol,
-          start: start.toISOString(),
-          end: end.toISOString(),
+          start: start,
+          end: end,
           timeframe: '1Min'
         },
       });
@@ -169,16 +175,26 @@ const Trading = () => {
       else if (Array.isArray(payload?.results)) arr = payload.results;
 
       if (arr && arr.length) {
-        console.log(`Received ${arr.length} bars`);
-        const mapped = arr.map((b: any) => ({
-          time: b.t ? new Date(b.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (b.Time || ''),
-          timestamp: b.t ? new Date(b.t).getTime() : 0,
-          open: b.o ?? b.open ?? 0,
-          high: b.h ?? b.high ?? 0,
-          low: b.l ?? b.low ?? 0,
-          close: b.c ?? b.close ?? 0,
-          volume: b.v ?? b.volume ?? 0,
-        }));
+        console.log(`Received ${arr.length} bars, first:`, arr[0], 'last:', arr[arr.length - 1]);
+        const mapped = arr.map((b: any) => {
+          const barTime = new Date(b.t);
+          return {
+            time: barTime.toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit',
+              hour12: false,
+              timeZone: 'America/New_York' // Display in ET
+            }),
+            timestamp: barTime.getTime(),
+            date: barTime.toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
+            open: b.o ?? b.open ?? 0,
+            high: b.h ?? b.high ?? 0,
+            low: b.l ?? b.low ?? 0,
+            close: b.c ?? b.close ?? 0,
+            volume: b.v ?? b.volume ?? 0,
+          };
+        });
+        console.log(`Mapped ${mapped.length} bars, latest bar time:`, mapped[mapped.length - 1]?.time, mapped[mapped.length - 1]?.date);
         setBars(mapped);
       } else {
         console.warn('No bars in response payload');
