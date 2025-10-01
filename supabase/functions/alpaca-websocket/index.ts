@@ -58,44 +58,55 @@ serve(async (req) => {
     
     const alpacaSocket = new WebSocket(alpacaWsUrl);
     
-    console.log('Connecting to Alpaca WebSocket...');
+    console.log('[WS] Connecting to Alpaca WebSocket...');
+    console.log('[WS] URL:', alpacaWsUrl);
+    console.log('[WS] Mode:', alpacaKey.mode);
+    console.log('[WS] API Key:', alpacaKey.api_key?.substring(0, 8) + '...');
 
     alpacaSocket.onopen = () => {
-      console.log('Connected to Alpaca WebSocket');
+      console.log('[WS] Connected to Alpaca WebSocket - sending auth');
       
       // Authenticate with Alpaca
-      alpacaSocket.send(JSON.stringify({
+      const authMsg = {
         action: 'auth',
         key: alpacaKey.api_key,
         secret: alpacaKey.api_secret
-      }));
+      };
+      
+      console.log('[WS] Sending auth message');
+      alpacaSocket.send(JSON.stringify(authMsg));
     };
 
     alpacaSocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('Received from Alpaca:', data);
+        console.log('[WS] Received from Alpaca:', JSON.stringify(data).substring(0, 200));
         
         // Handle auth response
         if (data[0]?.T === 'success' && data[0]?.msg === 'authenticated') {
-          console.log('Alpaca authentication successful');
+          console.log('[WS] ✓ Alpaca authentication successful');
           socket.send(JSON.stringify({ type: 'connected', message: 'Connected to Alpaca' }));
+        } else if (data[0]?.T === 'error') {
+          console.error('[WS] ✗ Alpaca auth error:', data[0]?.msg);
+          socket.send(JSON.stringify({ type: 'error', message: data[0]?.msg || 'Authentication failed' }));
         } else {
           // Forward data to client
           socket.send(event.data);
         }
       } catch (error) {
-        console.error('Error processing Alpaca message:', error);
+        console.error('[WS] Error processing Alpaca message:', error);
       }
     };
 
     alpacaSocket.onerror = (error) => {
-      console.error('Alpaca WebSocket error:', error);
+      console.error('[WS] ✗ Alpaca WebSocket error:', error);
       socket.send(JSON.stringify({ type: 'error', message: 'Alpaca connection error' }));
     };
 
-    alpacaSocket.onclose = () => {
-      console.log('Alpaca WebSocket closed');
+    alpacaSocket.onclose = (event) => {
+      console.log('[WS] Alpaca WebSocket closed');
+      console.log('[WS] Close code:', event.code);
+      console.log('[WS] Close reason:', event.reason);
       socket.send(JSON.stringify({ type: 'disconnected', message: 'Alpaca connection closed' }));
     };
 

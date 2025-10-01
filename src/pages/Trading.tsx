@@ -8,6 +8,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAlpacaWebSocket } from "@/hooks/useAlpacaWebSocket";
 import { ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Line } from "recharts";
+import { getMarketStatus, MarketStatus } from "@/lib/marketHours";
 
 interface MarketData {
   price: number;
@@ -32,9 +33,18 @@ const Trading = () => {
   const [optionsData, setOptionsData] = useState<OptionData[]>([]);
   const [bars, setBars] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
+  const [marketStatus, setMarketStatus] = useState<MarketStatus>(getMarketStatus());
   
   // Use WebSocket for live data
   const { quotes, trades, connected } = useAlpacaWebSocket([selectedSymbol]);
+
+  // Update market status every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMarketStatus(getMarketStatus());
+    }, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   const fetchMarketData = async () => {
     setLoading(true);
@@ -296,9 +306,16 @@ const Trading = () => {
             <p className="text-muted-foreground">Real-time options trading with HAVWAP strategies</p>
           </div>
           <div className="flex items-center gap-3">
-            <Badge variant="outline" className="px-4 py-2">
-              <div className="w-2 h-2 rounded-full bg-success animate-pulse mr-2" />
-              Bot Active
+            <Badge 
+              variant={marketStatus.isOpen ? "default" : "secondary"} 
+              className="px-4 py-2"
+            >
+              <div className={`w-2 h-2 rounded-full mr-2 ${marketStatus.isOpen ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`} />
+              Market {marketStatus.status === 'open' ? 'Open' : marketStatus.status === 'pre-market' ? 'Pre-Market' : marketStatus.status === 'after-hours' ? 'After Hours' : 'Closed'}
+            </Badge>
+            <Badge variant={connected ? "default" : "secondary"} className="px-4 py-2">
+              <div className={`w-2 h-2 rounded-full mr-2 ${connected ? 'bg-success animate-pulse' : 'bg-muted-foreground'}`} />
+              {connected ? 'Live Data Connected' : 'Disconnected'}
             </Badge>
             <Button variant="outline" size="sm">
               <Play className="w-4 h-4 mr-2" />

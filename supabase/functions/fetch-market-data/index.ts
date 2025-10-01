@@ -108,33 +108,58 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else if (dataType === 'bars' && alpacaKey) {
-      // Fetch historical bars from Alpaca - get last month of 1-minute data
+      // Fetch historical bars from Alpaca - only request trading days
       const baseUrl = 'https://data.alpaca.markets';
       
       const endDate = end ? new Date(end) : new Date();
-      const startDate = start ? new Date(start) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+      
+      // Calculate start date - go back more days to account for weekends
+      const daysToGoBack = 45; // Request more days to ensure we get 30 trading days
+      const startDate = start ? new Date(start) : new Date(endDate.getTime() - daysToGoBack * 24 * 60 * 60 * 1000);
+      
       const tf = timeframe || '1Min';
       
-      console.log(`Fetching bars for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+      console.log(`[BARS REQUEST] Symbol: ${symbol}`);
+      console.log(`[BARS REQUEST] Start: ${startDate.toISOString()}`);
+      console.log(`[BARS REQUEST] End: ${endDate.toISOString()}`);
+      console.log(`[BARS REQUEST] Timeframe: ${tf}`);
+      console.log(`[BARS REQUEST] API Key ID: ${alpacaKey.api_key?.substring(0, 8)}...`);
+      console.log(`[BARS REQUEST] Mode: ${alpacaKey.mode}`);
       
-      const response = await fetch(
-        `${baseUrl}/v2/stocks/${symbol}/bars?start=${startDate.toISOString()}&end=${endDate.toISOString()}&timeframe=${tf}&limit=10000`,
-        {
-          headers: {
-            'APCA-API-KEY-ID': alpacaKey.api_key,
-            'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
-          },
-        }
-      );
+      const url = `${baseUrl}/v2/stocks/${symbol}/bars?start=${startDate.toISOString()}&end=${endDate.toISOString()}&timeframe=${tf}&limit=10000&feed=iex`;
+      console.log(`[BARS REQUEST] Full URL: ${url}`);
+      
+      const response = await fetch(url, {
+        headers: {
+          'APCA-API-KEY-ID': alpacaKey.api_key,
+          'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+        },
+      });
+
+      console.log(`[BARS RESPONSE] Status: ${response.status} ${response.statusText}`);
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Alpaca bars API error:', errorText);
+        console.error('[BARS ERROR] Response:', errorText);
         throw new Error(`Alpaca API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
-      console.log(`Received ${data.bars?.[symbol]?.length || 0} bars`);
+      const barCount = data.bars?.[symbol]?.length || 0;
+      console.log(`[BARS SUCCESS] Received ${barCount} bars`);
+      
+      if (barCount === 0) {
+        console.warn('[BARS WARNING] No bars returned - possible reasons:');
+        console.warn('  - Markets are closed');
+        console.warn('  - No trading activity in date range');
+        console.warn('  - IEX feed limitation (paper trading)');
+        console.warn('  - Symbol not found or invalid');
+      } else {
+        const firstBar = data.bars[symbol][0];
+        const lastBar = data.bars[symbol][barCount - 1];
+        console.log(`[BARS INFO] First bar: ${firstBar.t}`);
+        console.log(`[BARS INFO] Last bar: ${lastBar.t}`);
+      }
       
       return new Response(
         JSON.stringify({ data }),

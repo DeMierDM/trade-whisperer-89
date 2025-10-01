@@ -49,31 +49,54 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
         ]);
 
         ws.onopen = () => {
-          console.log('WebSocket connected');
+          console.log('[WS CLIENT] WebSocket connection opened');
           if (mounted) {
             setConnected(true);
-            
-            // Subscribe to symbols once connected
-            if (symbols.length > 0) {
-              setTimeout(() => {
-                ws.send(JSON.stringify({
-                  action: 'subscribe',
-                  quotes: symbols,
-                  trades: symbols
-                }));
-                console.log('Subscribed to:', symbols);
-              }, 1000);
-            }
           }
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            console.log('Received data:', data);
+            console.log('[WS CLIENT] Received:', data);
+
+            // Handle connection confirmation
+            if (data.type === 'connected') {
+              console.log('[WS CLIENT] ✓ Connected to Alpaca via proxy');
+              
+              // Subscribe to symbols after connection is confirmed
+              if (symbols.length > 0) {
+                setTimeout(() => {
+                  console.log('[WS CLIENT] Subscribing to symbols:', symbols);
+                  ws.send(JSON.stringify({
+                    action: 'subscribe',
+                    quotes: symbols,
+                    trades: symbols
+                  }));
+                }, 500);
+              }
+              return;
+            }
+
+            // Handle errors
+            if (data.type === 'error') {
+              console.error('[WS CLIENT] ✗ Error:', data.message);
+              toast({
+                title: 'WebSocket Error',
+                description: data.message,
+                variant: 'destructive',
+              });
+              return;
+            }
 
             if (Array.isArray(data)) {
               data.forEach((item: any) => {
+                // Handle subscription confirmations
+                if (item.T === 'subscription') {
+                  console.log('[WS CLIENT] ✓ Subscription confirmed:', item);
+                  return;
+                }
+
                 // Handle quotes
                 if (item.T === 'q') {
                   const quote: Quote = {
@@ -84,6 +107,8 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
                     bidSize: item.bs,
                     timestamp: item.t
                   };
+                  
+                  console.log('[WS CLIENT] Quote:', quote);
                   
                   if (mounted) {
                     setQuotes(prev => {
@@ -103,14 +128,16 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
                     timestamp: item.t
                   };
                   
+                  console.log('[WS CLIENT] Trade:', trade);
+                  
                   if (mounted) {
-                    setTrades(prev => [trade, ...prev].slice(0, 100)); // Keep last 100 trades
+                    setTrades(prev => [trade, ...prev].slice(0, 100));
                   }
                 }
               });
             }
           } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
+            console.error('[WS CLIENT] Error parsing message:', error);
           }
         };
 
