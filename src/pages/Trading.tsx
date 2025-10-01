@@ -231,8 +231,7 @@ const Trading = () => {
     const latestTrade = trades.find(t => t.symbol === selectedSymbol);
     
     if (latestTrade && bars.length > 0) {
-      const now = new Date();
-      const currentMinute = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes()).getTime();
+      const currentMinute = Math.floor(Date.now() / 60000) * 60000;
       
       setBars(prevBars => {
         const lastBar = prevBars[prevBars.length - 1];
@@ -250,7 +249,7 @@ const Trading = () => {
         } else {
           // Create new bar for new minute
           const newBar = {
-            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            time: new Date(currentMinute).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' }),
             timestamp: currentMinute,
             open: latestTrade.price,
             high: latestTrade.price,
@@ -357,7 +356,13 @@ const Trading = () => {
                       <ComposedChart data={bars.slice(-500)} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                         <XAxis 
-                          dataKey="time" 
+                          dataKey="timestamp"
+                          type="number"
+                          domain={["dataMin", "dataMax"]}
+                          tickFormatter={(ts) => new Intl.DateTimeFormat('en-US', {
+                            hour: '2-digit', minute: '2-digit', month: '2-digit', day: '2-digit',
+                            hour12: false, timeZone: 'America/New_York'
+                          }).format(new Date(ts))}
                           minTickGap={50}
                           tick={{ fill: 'hsl(var(--muted-foreground))' }}
                         />
@@ -366,6 +371,10 @@ const Trading = () => {
                           tick={{ fill: 'hsl(var(--muted-foreground))' }}
                         />
                         <Tooltip 
+                          labelFormatter={(ts) => new Intl.DateTimeFormat('en-US', {
+                            year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+                            hour12: false, timeZone: 'America/New_York'
+                          }).format(new Date(Number(ts)))}
                           contentStyle={{ 
                             backgroundColor: 'hsl(var(--card))', 
                             border: '1px solid hsl(var(--border))' 
