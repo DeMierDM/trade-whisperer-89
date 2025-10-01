@@ -28,7 +28,8 @@ serve(async (req) => {
       throw new Error('Unauthorized');
     }
 
-    const { symbol, dataType } = await req.json();
+    const requestBody = await req.json();
+    const { symbol, dataType, start, end, timeframe } = requestBody;
 
     // Get API keys from database
     const { data: apiKeys, error: keysError } = await supabaseClient
@@ -107,17 +108,17 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else if (dataType === 'bars' && alpacaKey) {
-      // Fetch historical bars from Alpaca
-      const baseUrl = alpacaKey.mode === 'paper' 
-        ? 'https://data.alpaca.markets' 
-        : 'https://data.alpaca.markets';
+      // Fetch historical bars from Alpaca - get last month of 1-minute data
+      const baseUrl = 'https://data.alpaca.markets';
       
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - 7);
+      const endDate = end ? new Date(end) : new Date();
+      const startDate = start ? new Date(start) : new Date(endDate.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+      const tf = timeframe || '1Min';
+      
+      console.log(`Fetching bars for ${symbol} from ${startDate.toISOString()} to ${endDate.toISOString()}`);
       
       const response = await fetch(
-        `${baseUrl}/v2/stocks/${symbol}/bars?start=${start.toISOString()}&end=${end.toISOString()}&timeframe=1Min&limit=1000`,
+        `${baseUrl}/v2/stocks/${symbol}/bars?start=${startDate.toISOString()}&end=${endDate.toISOString()}&timeframe=${tf}&limit=10000`,
         {
           headers: {
             'APCA-API-KEY-ID': alpacaKey.api_key,
@@ -127,10 +128,13 @@ serve(async (req) => {
       );
 
       if (!response.ok) {
-        throw new Error(`Alpaca API error: ${await response.text()}`);
+        const errorText = await response.text();
+        console.error('Alpaca bars API error:', errorText);
+        throw new Error(`Alpaca API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
+      console.log(`Received ${data.bars?.[symbol]?.length || 0} bars`);
       
       return new Response(
         JSON.stringify({ data }),

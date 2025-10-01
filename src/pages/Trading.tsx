@@ -7,7 +7,7 @@ import { Play, Pause, Square, RefreshCw, AlertTriangle, Loader2 } from "lucide-r
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAlpacaWebSocket } from "@/hooks/useAlpacaWebSocket";
-import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
+import { ResponsiveContainer, ComposedChart, Bar, XAxis, YAxis, Tooltip, CartesianGrid, Line } from "recharts";
 
 interface MarketData {
   price: number;
@@ -34,7 +34,7 @@ const Trading = () => {
   const [loading, setLoading] = useState(false);
   
   // Use WebSocket for live data
-  const { quotes, connected } = useAlpacaWebSocket([selectedSymbol]);
+  const { quotes, trades, connected } = useAlpacaWebSocket([selectedSymbol]);
 
   const fetchMarketData = async () => {
     setLoading(true);
@@ -135,9 +135,19 @@ const Trading = () => {
   const fetchBars = async () => {
     setLoading(true);
     try {
-      console.log('Fetching bars for', selectedSymbol);
+      console.log('Fetching last 30 days of minute bars for', selectedSymbol);
+      
+      const end = new Date();
+      const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 days ago
+      
       const { data, error } = await supabase.functions.invoke("fetch-market-data", {
-        body: { dataType: "bars", symbol: selectedSymbol },
+        body: { 
+          dataType: "bars", 
+          symbol: selectedSymbol,
+          start: start.toISOString(),
+          end: end.toISOString(),
+          timeframe: '1Min'
+        },
       });
 
       console.log('Bars response:', data);
@@ -159,9 +169,15 @@ const Trading = () => {
       else if (Array.isArray(payload?.results)) arr = payload.results;
 
       if (arr && arr.length) {
+        console.log(`Received ${arr.length} bars`);
         const mapped = arr.map((b: any) => ({
           time: b.t ? new Date(b.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (b.Time || ''),
+          timestamp: b.t ? new Date(b.t).getTime() : 0,
+          open: b.o ?? b.open ?? 0,
+          high: b.h ?? b.high ?? 0,
+          low: b.l ?? b.low ?? 0,
           close: b.c ?? b.close ?? 0,
+          volume: b.v ?? b.volume ?? 0,
         }));
         setBars(mapped);
       } else {
@@ -180,8 +196,7 @@ const Trading = () => {
     }
   };
 
-  // Update market data from WebSocket
-
+  // Update market data from WebSocket quotes
   useEffect(() => {
     const quote = quotes.get(selectedSymbol);
     if (quote) {
@@ -193,6 +208,52 @@ const Trading = () => {
       });
     }
   }, [quotes, selectedSymbol]);
+
+  // Update chart with live trade data from WebSocket
+  useEffect(() => {
+    // Get latest trade for selected symbol
+    const latestTrade = trades.find(t => t.symbol === selectedSymbol);
+    
+    if (latestTrade && bars.length > 0) {
+      const now = new Date();
+      const currentMinute = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes()).getTime();
+      
+      setBars(prevBars => {
+        const lastBar = prevBars[prevBars.length - 1];
+        
+        // If last bar is for current minute, update it
+        if (lastBar && lastBar.timestamp === currentMinute) {
+          const updatedBar = {
+            ...lastBar,
+            high: Math.max(lastBar.high, latestTrade.price),
+            low: Math.min(lastBar.low, latestTrade.price),
+            close: latestTrade.price,
+            volume: lastBar.volume + latestTrade.size,
+          };
+          return [...prevBars.slice(0, -1), updatedBar];
+        } else {
+          // Create new bar for new minute
+          const newBar = {
+            time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            timestamp: currentMinute,
+            open: latestTrade.price,
+            high: latestTrade.price,
+            low: latestTrade.price,
+            close: latestTrade.price,
+            volume: latestTrade.size,
+          };
+          return [...prevBars, newBar];
+        }
+      });
+      
+      // Also update the header price display
+      setMarketData(prev => ({
+        price: latestTrade.price,
+        change: prev ? latestTrade.price - prev.price : 0,
+        changePercent: prev && prev.price > 0 ? ((latestTrade.price - prev.price) / prev.price) * 100 : 0,
+      }));
+    }
+  }, [trades, selectedSymbol]);
 
   useEffect(() => {
     // Fetch initial options chain data (historical)
@@ -274,19 +335,48 @@ const Trading = () => {
                     <RefreshCw className="w-4 h-4" />
                   </Button>
                 </div>
-                <div className="h-[500px] bg-background/50 rounded-lg flex items-center justify-center border border-border">
+                <div className="h-[500px] bg-background/50 rounded-lg p-4 border border-border">
                   {bars.length > 0 ? (
                     <ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={bars} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                        <CartesianGrid strokeDasharray="3 3" />
-                        <XAxis dataKey="time" minTickGap={20} />
-                        <YAxis domain={["auto", "auto"]} />
-                        <Tooltip />
-                        <Line type="monotone" dataKey="close" stroke="hsl(var(--primary))" dot={false} strokeWidth={2} />
-                      </LineChart>
+                      <ComposedChart data={bars.slice(-500)} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                        <XAxis 
+                          dataKey="time" 
+                          minTickGap={50}
+                          tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                        />
+                        <YAxis 
+                          domain={["auto", "auto"]}
+                          tick={{ fill: 'hsl(var(--muted-foreground))' }}
+                        />
+                        <Tooltip 
+                          contentStyle={{ 
+                            backgroundColor: 'hsl(var(--card))', 
+                            border: '1px solid hsl(var(--border))' 
+                          }}
+                          labelStyle={{ color: 'hsl(var(--foreground))' }}
+                        />
+                        <Bar dataKey="volume" fill="hsl(var(--muted))" opacity={0.3} yAxisId="volume" />
+                        <Line 
+                          type="monotone" 
+                          dataKey="close" 
+                          stroke="hsl(var(--primary))" 
+                          dot={false} 
+                          strokeWidth={2}
+                        />
+                      </ComposedChart>
                     </ResponsiveContainer>
+                  ) : loading ? (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2" />
+                        <p className="text-muted-foreground">Loading chart data...</p>
+                      </div>
+                    </div>
                   ) : (
-                    <p className="text-muted-foreground">No chart data yet</p>
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-muted-foreground">No chart data available</p>
+                    </div>
                   )}
                 </div>
               </Card>
