@@ -7,6 +7,7 @@ import { Play, Pause, Square, RefreshCw, AlertTriangle, Loader2 } from "lucide-r
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { useAlpacaWebSocket } from "@/hooks/useAlpacaWebSocket";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts";
 
 interface MarketData {
   price: number;
@@ -29,6 +30,7 @@ const Trading = () => {
   const [selectedSymbol] = useState("SPY");
   const [marketData, setMarketData] = useState<MarketData | null>(null);
   const [optionsData, setOptionsData] = useState<OptionData[]>([]);
+  const [bars, setBars] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   
   // Use WebSocket for live data
@@ -130,7 +132,56 @@ const Trading = () => {
     }
   };
 
+  const fetchBars = async () => {
+    setLoading(true);
+    try {
+      console.log('Fetching bars for', selectedSymbol);
+      const { data, error } = await supabase.functions.invoke("fetch-market-data", {
+        body: { dataType: "bars", symbol: selectedSymbol },
+      });
+
+      console.log('Bars response:', data);
+      console.log('Bars error:', error);
+
+      if (error) {
+        console.error('Bars error:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
+
+      const payload = data?.data;
+      let arr: any[] = [];
+      if (payload?.bars?.[selectedSymbol]) arr = payload.bars[selectedSymbol];
+      else if (Array.isArray(payload?.bars)) arr = payload.bars;
+      else if (Array.isArray(payload?.results)) arr = payload.results;
+
+      if (arr && arr.length) {
+        const mapped = arr.map((b: any) => ({
+          time: b.t ? new Date(b.t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : (b.Time || ''),
+          close: b.c ?? b.close ?? 0,
+        }));
+        setBars(mapped);
+      } else {
+        console.warn('No bars in response payload');
+        setBars([]);
+      }
+    } catch (error: any) {
+      console.error('Error fetching bars:', error);
+      toast({
+        title: "Error fetching bars",
+        description: error.message || 'Failed to fetch bars. Check console for details.',
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // Update market data from WebSocket
+
   useEffect(() => {
     const quote = quotes.get(selectedSymbol);
     if (quote) {
@@ -151,6 +202,12 @@ const Trading = () => {
     const interval = setInterval(fetchOptionsChain, 300000);
 
     return () => clearInterval(interval);
+  }, [selectedSymbol]);
+
+  useEffect(() => {
+    // Fetch initial quote and bars for chart + header
+    fetchMarketData();
+    fetchBars();
   }, [selectedSymbol]);
 
   return (
@@ -213,12 +270,24 @@ const Trading = () => {
                       <span className="text-muted-foreground">No data</span>
                     )}
                   </div>
-                  <Button variant="outline" size="sm" onClick={fetchMarketData}>
+                  <Button variant="outline" size="sm" onClick={() => { fetchMarketData(); fetchBars(); }}>
                     <RefreshCw className="w-4 h-4" />
                   </Button>
                 </div>
                 <div className="h-[500px] bg-background/50 rounded-lg flex items-center justify-center border border-border">
-                  <p className="text-muted-foreground">Chart visualization coming soon</p>
+                  {bars.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={bars} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="time" minTickGap={20} />
+                        <YAxis domain={["auto", "auto"]} />
+                        <Tooltip />
+                        <Line type="monotone" dataKey="close" stroke="hsl(var(--primary))" dot={false} strokeWidth={2} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <p className="text-muted-foreground">No chart data yet</p>
+                  )}
                 </div>
               </Card>
 
