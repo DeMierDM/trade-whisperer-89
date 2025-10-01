@@ -82,12 +82,24 @@ const Settings = () => {
 
   const handleSaveApiKey = async (provider: "polygon" | "alpaca") => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("Not authenticated");
+      console.log(`Saving ${provider} API key...`);
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) {
+        console.error('Auth error:', userError);
+        throw userError;
+      }
+      
+      if (!user) {
+        throw new Error("Not authenticated");
+      }
 
       const keyData = provider === "polygon" 
         ? { user_id: user.id, provider, api_key: polygonKey }
         : { user_id: user.id, provider, api_key: alpacaKey, api_secret: alpacaSecret, mode: alpacaMode };
+
+      console.log('Upserting API key for provider:', provider);
 
       const { error } = await supabase
         .from("api_keys")
@@ -95,7 +107,12 @@ const Settings = () => {
           onConflict: 'user_id,provider'
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Upsert error:', error);
+        throw error;
+      }
+      
+      console.log(`${provider} API key saved successfully`);
       
       toast({
         title: "API key saved",
@@ -107,7 +124,7 @@ const Settings = () => {
       console.error("Error saving API key:", error);
       toast({
         title: "Error saving API key",
-        description: error.message,
+        description: error.message || 'Failed to save API key',
         variant: "destructive",
       });
     }

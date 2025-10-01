@@ -37,26 +37,45 @@ export const useOptimizer = () => {
     setProgress(0);
 
     try {
+      console.log('Starting optimization with config:', config);
+      
       const { data, error } = await supabase.functions.invoke('strategy-optimizer', {
         body: config,
       });
 
-      if (error) throw error;
+      console.log('Optimization response:', data);
+      console.log('Optimization error:', error);
 
-      if (data.success) {
-        setResults(data);
-        setProgress(100);
-
-        toast({
-          title: 'Optimization Complete',
-          description: `Best ${config.objective}: ${data.bestScore.toFixed(4)}`,
-        });
+      if (error) {
+        console.error('Optimization invocation error:', error);
+        throw error;
       }
+
+      if (!data) {
+        throw new Error('No response data from optimizer');
+      }
+
+      if (data.error) {
+        throw new Error(data.error);
+      }
+
+      if (!data.success) {
+        throw new Error(data.message || 'Optimization failed');
+      }
+
+      console.log('Optimization completed successfully');
+      setResults(data);
+      setProgress(100);
+
+      toast({
+        title: 'Optimization Complete',
+        description: `Best ${config.objective}: ${(data.bestScore ?? 0).toFixed(4)}`,
+      });
     } catch (error: any) {
       console.error('Optimization error:', error);
       toast({
         title: 'Optimization Failed',
-        description: error.message,
+        description: error.message || 'An unknown error occurred',
         variant: 'destructive',
       });
     } finally {

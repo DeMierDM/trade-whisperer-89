@@ -26,17 +26,27 @@ export const useRiskControls = () => {
 
   const fetchControls = async () => {
     try {
+      console.log('Fetching risk controls...');
+      
       const { data, error } = await supabase
         .from('risk_controls')
         .select('*')
-        .single();
+        .maybeSingle();
 
-      if (error && error.code !== 'PGRST116') throw error;
+      console.log('Risk controls response:', data);
+      console.log('Risk controls error:', error);
+
+      if (error) {
+        console.error('Error fetching risk controls:', error);
+        throw error;
+      }
+
       setControls(data);
     } catch (error: any) {
+      console.error('Error in fetchControls:', error);
       toast({
         title: 'Error fetching risk controls',
-        description: error.message,
+        description: error.message || 'Failed to load risk controls',
         variant: 'destructive',
       });
     } finally {
@@ -46,8 +56,18 @@ export const useRiskControls = () => {
 
   const saveControls = async (newControls: Partial<RiskControls>) => {
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('Not authenticated');
+      console.log('Saving risk controls:', newControls);
+      
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      
+      if (userError) {
+        console.error('Auth error:', userError);
+        throw userError;
+      }
+      
+      if (!user) {
+        throw new Error('Not authenticated');
+      }
 
       const { error } = await supabase
         .from('risk_controls')
@@ -56,7 +76,12 @@ export const useRiskControls = () => {
           ...newControls,
         });
 
-      if (error) throw error;
+      if (error) {
+        console.error('Upsert error:', error);
+        throw error;
+      }
+
+      console.log('Risk controls saved successfully');
 
       toast({
         title: 'Risk controls saved',
@@ -65,9 +90,10 @@ export const useRiskControls = () => {
 
       await fetchControls();
     } catch (error: any) {
+      console.error('Error in saveControls:', error);
       toast({
         title: 'Error saving risk controls',
-        description: error.message,
+        description: error.message || 'Failed to save risk controls',
         variant: 'destructive',
       });
     }

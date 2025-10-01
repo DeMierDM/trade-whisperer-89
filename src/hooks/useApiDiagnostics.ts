@@ -59,14 +59,17 @@ export const useApiDiagnostics = () => {
       });
       const duration = Date.now() - start;
       
+      console.log('Account test:', { data, error, duration });
+      
       diagnosticTests[0] = {
         ...diagnosticTests[0],
-        status: error ? 'error' : 'success',
+        status: error || !data || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message,
+        error: error?.message || data?.error,
         duration,
       };
     } catch (e: any) {
+      console.error('Account test exception:', e);
       diagnosticTests[0] = {
         ...diagnosticTests[0],
         status: 'error',
@@ -83,14 +86,17 @@ export const useApiDiagnostics = () => {
       });
       const duration = Date.now() - start;
       
+      console.log('Orders test:', { data, error, duration });
+      
       diagnosticTests[1] = {
         ...diagnosticTests[1],
-        status: error ? 'error' : 'success',
+        status: error || !data || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message,
+        error: error?.message || data?.error,
         duration,
       };
     } catch (e: any) {
+      console.error('Orders test exception:', e);
       diagnosticTests[1] = {
         ...diagnosticTests[1],
         status: 'error',
@@ -107,14 +113,17 @@ export const useApiDiagnostics = () => {
       });
       const duration = Date.now() - start;
       
+      console.log('Quote test:', { data, error, duration });
+      
       diagnosticTests[2] = {
         ...diagnosticTests[2],
-        status: error ? 'error' : 'success',
+        status: error || !data || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message,
+        error: error?.message || data?.error,
         duration,
       };
     } catch (e: any) {
+      console.error('Quote test exception:', e);
       diagnosticTests[2] = {
         ...diagnosticTests[2],
         status: 'error',
@@ -130,21 +139,24 @@ export const useApiDiagnostics = () => {
         body: { 
           dataType: 'bars', 
           symbol: 'SPY',
-          start: '2024-01-01',
-          end: '2024-01-05',
+          start: '2024-01-01T09:30:00Z',
+          end: '2024-01-05T16:00:00Z',
           timeframe: '1Min'
         },
       });
       const duration = Date.now() - start;
       
+      console.log('Bars test:', { data, error, duration });
+      
       diagnosticTests[3] = {
         ...diagnosticTests[3],
-        status: error ? 'error' : 'success',
+        status: error || !data || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message,
+        error: error?.message || data?.error,
         duration,
       };
     } catch (e: any) {
+      console.error('Bars test exception:', e);
       diagnosticTests[3] = {
         ...diagnosticTests[3],
         status: 'error',
@@ -161,14 +173,17 @@ export const useApiDiagnostics = () => {
       });
       const duration = Date.now() - start;
       
+      console.log('Options test:', { data, error, duration });
+      
       diagnosticTests[4] = {
         ...diagnosticTests[4],
-        status: error ? 'error' : 'success',
+        status: error || !data || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message,
+        error: error?.message || data?.error,
         duration,
       };
     } catch (e: any) {
+      console.error('Options test exception:', e);
       diagnosticTests[4] = {
         ...diagnosticTests[4],
         status: 'error',
@@ -194,14 +209,17 @@ export const useApiDiagnostics = () => {
       });
       const duration = Date.now() - start;
       
+      console.log('Backtest test:', { data, error, duration });
+      
       diagnosticTests[5] = {
         ...diagnosticTests[5],
-        status: error ? 'error' : 'success',
+        status: error || !data || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message,
+        error: error?.message || data?.error,
         duration,
       };
     } catch (e: any) {
+      console.error('Backtest test exception:', e);
       diagnosticTests[5] = {
         ...diagnosticTests[5],
         status: 'error',
