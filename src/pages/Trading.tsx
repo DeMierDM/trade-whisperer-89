@@ -356,7 +356,6 @@ const Trading = () => {
                           }}
                           labelStyle={{ color: 'hsl(var(--foreground))' }}
                         />
-                        <Bar dataKey="volume" fill="hsl(var(--muted))" opacity={0.3} yAxisId="volume" />
                         <Line 
                           type="monotone" 
                           dataKey="close" 
