@@ -30,19 +30,25 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
 
     const connectWebSocket = async () => {
       try {
+        console.log('[WS CLIENT] Starting WebSocket connection process...');
+        
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
-          console.log('No session found');
+          console.log('[WS CLIENT] ✗ No session found - cannot connect');
+          toast({
+            title: 'Authentication Required',
+            description: 'Please log in to access live market data',
+            variant: 'destructive',
+          });
           return;
         }
 
-        // Get the project reference from the Supabase URL
-        const supabaseUrl = await supabase.auth.getSession().then(() => {
-          return 'uroueekwllvjcueyrmrg'; // Project ID
-        });
+        console.log('[WS CLIENT] ✓ Session found, connecting to WebSocket proxy...');
 
-        const wsUrl = `wss://${supabaseUrl}.supabase.co/functions/v1/alpaca-websocket`;
-        console.log('Connecting to:', wsUrl);
+        // Use the actual Supabase project URL
+        const wsUrl = `wss://uroueekwllvjcueyrmrg.supabase.co/functions/v1/alpaca-websocket`;
+        console.log('[WS CLIENT] WebSocket URL:', wsUrl);
+        console.log('[WS CLIENT] Auth token length:', session.access_token.length);
 
         const ws = new WebSocket(wsUrl, [
           `Bearer ${session.access_token}`,
