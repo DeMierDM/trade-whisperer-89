@@ -33,19 +33,36 @@ const History = () => {
   const fetchOrders = async () => {
     setLoading(true);
     try {
+      console.log('Fetching order history...');
+      
       const { data, error } = await supabase.functions.invoke("fetch-market-data", {
         body: { dataType: "orders" },
       });
 
-      if (error) throw error;
+      console.log('Orders response:', data);
+      console.log('Orders error:', error);
+
+      if (error) {
+        console.error('Orders error:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
       if (data?.data && Array.isArray(data.data)) {
+        console.log('Orders received:', data.data.length);
         setOrders(data.data);
+      } else {
+        console.warn('No orders data in response');
+        setOrders([]);
       }
     } catch (error: any) {
+      console.error('Error fetching order history:', error);
       toast({
         title: "Error fetching order history",
-        description: error.message,
+        description: error.message || 'Failed to fetch order history. Check console for details.',
         variant: "destructive",
       });
     } finally {

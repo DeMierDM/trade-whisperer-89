@@ -37,14 +37,27 @@ const Trading = () => {
   const fetchMarketData = async () => {
     setLoading(true);
     try {
+      console.log('Fetching quote for', selectedSymbol);
+      
       const { data, error } = await supabase.functions.invoke("fetch-market-data", {
         body: { dataType: "quote", symbol: selectedSymbol },
       });
 
-      if (error) throw error;
+      console.log('Quote response:', data);
+      console.log('Quote error:', error);
+
+      if (error) {
+        console.error('Quote error:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
       if (data?.data?.quote) {
         const quote = data.data.quote;
+        console.log('Quote data:', quote);
         setMarketData({
           price: quote.ap || 0,
           change: quote.ap - (quote.prevclose || quote.ap) || 0,
@@ -52,11 +65,14 @@ const Trading = () => {
             ? ((quote.ap - quote.prevclose) / quote.prevclose) * 100 
             : 0,
         });
+      } else {
+        console.warn('No quote data in response');
       }
     } catch (error: any) {
+      console.error('Error fetching market data:', error);
       toast({
         title: "Error fetching market data",
-        description: error.message,
+        description: error.message || 'Failed to fetch market data. Check console for details.',
         variant: "destructive",
       });
     } finally {
@@ -67,13 +83,26 @@ const Trading = () => {
   const fetchOptionsChain = async () => {
     setLoading(true);
     try {
+      console.log('Fetching options chain for', selectedSymbol);
+      
       const { data, error } = await supabase.functions.invoke("fetch-market-data", {
         body: { dataType: "options", symbol: selectedSymbol },
       });
 
-      if (error) throw error;
+      console.log('Options response:', data);
+      console.log('Options error:', error);
+
+      if (error) {
+        console.error('Options error:', error);
+        throw error;
+      }
+
+      if (data?.error) {
+        throw new Error(data.error);
+      }
 
       if (data?.data && Array.isArray(data.data)) {
+        console.log('Options data count:', data.data.length);
         // Transform API data to match UI format
         const formattedOptions: OptionData[] = data.data.slice(0, 20).map((opt: any) => ({
           strike: `${opt.strike_price || opt.details?.strike_price || 0}${opt.contract_type || opt.details?.contract_type || 'C'}`,
@@ -86,13 +115,14 @@ const Trading = () => {
         }));
         setOptionsData(formattedOptions);
       } else {
+        console.warn('No options data in response');
         setOptionsData([]);
       }
     } catch (error: any) {
       console.error("Error fetching options chain:", error);
       toast({
         title: "Error fetching options data",
-        description: error.message,
+        description: error.message || 'Failed to fetch options data. Check console for details.',
         variant: "destructive",
       });
     } finally {

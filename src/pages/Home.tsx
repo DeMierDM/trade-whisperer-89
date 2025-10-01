@@ -27,16 +27,35 @@ const Home = () => {
 
   const fetchAccountData = async () => {
     try {
+      console.log('Fetching account data...');
+      
       // Fetch account and positions data
       const { data: accountResponse, error: accountError } = await supabase.functions.invoke("fetch-market-data", {
         body: { dataType: "account" },
       });
 
-      if (accountError) throw accountError;
+      console.log('Account response:', accountResponse);
+      console.log('Account error:', accountError);
+
+      if (accountError) {
+        console.error('Account error:', accountError);
+        throw accountError;
+      }
+
+      if (!accountResponse) {
+        throw new Error('No response from server');
+      }
+
+      if (accountResponse.error) {
+        throw new Error(accountResponse.error);
+      }
 
       if (accountResponse?.data) {
         const account = accountResponse.data.account;
         const positions = accountResponse.data.positions || [];
+        
+        console.log('Account data:', account);
+        console.log('Positions:', positions);
 
         // Calculate daily P&L
         const equity = parseFloat(account.equity || 0);
@@ -58,6 +77,9 @@ const Home = () => {
 
         // Fetch order history for win rate
         fetchWinRate();
+      } else {
+        console.warn('No account data in response');
+        throw new Error('No account data returned from API');
       }
 
       setLoading(false);
@@ -65,7 +87,7 @@ const Home = () => {
       console.error("Error fetching account data:", error);
       toast({
         title: "Error loading account data",
-        description: error.message,
+        description: error.message || 'Failed to fetch account data. Check console for details.',
         variant: "destructive",
       });
       setLoading(false);
@@ -74,13 +96,26 @@ const Home = () => {
 
   const fetchWinRate = async () => {
     try {
+      console.log('Fetching win rate...');
+      
       const { data: ordersResponse, error: ordersError } = await supabase.functions.invoke("fetch-market-data", {
         body: { dataType: "orders" },
       });
 
-      if (ordersError) throw ordersError;
+      console.log('Orders response:', ordersResponse);
+      console.log('Orders error:', ordersError);
+
+      if (ordersError) {
+        console.error('Orders error:', ordersError);
+        throw ordersError;
+      }
+
+      if (ordersResponse?.error) {
+        throw new Error(ordersResponse.error);
+      }
 
       if (ordersResponse?.data && Array.isArray(ordersResponse.data)) {
+        console.log('Processing orders:', ordersResponse.data.length);
         const closedOrders = ordersResponse.data.filter((o: any) => o.status === 'filled');
         
         // Group orders into trades (buy + sell pairs)
