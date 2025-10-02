@@ -4,7 +4,7 @@ import { useToast } from '@/hooks/use-toast';
 
 export interface ApiKey {
   id: string;
-  provider: 'polygon' | 'alpaca' | 'openai';
+  provider: 'alpaca' | 'openai';
   api_key: string;
   api_secret?: string;
   mode?: 'paper' | 'live';
@@ -19,15 +19,10 @@ export const useApiKeys = () => {
 
   const fetchApiKeys = async () => {
     try {
-      console.log('Fetching API keys...');
-      
       const { data, error } = await supabase
         .from('api_keys')
         .select('*')
         .order('created_at', { ascending: false });
-
-      console.log('API keys response:', data);
-      console.log('API keys error:', error);
 
       if (error) {
         console.error('Error fetching API keys:', error);
@@ -58,14 +53,9 @@ export const useApiKeys = () => {
     mode?: string
   ) => {
     try {
-      console.log(`Testing ${provider} connection...`);
-      
       const { data, error } = await supabase.functions.invoke('test-api-connection', {
         body: { provider, apiKey, apiSecret, mode },
       });
-
-      console.log('Test connection response:', data);
-      console.log('Test connection error:', error);
 
       if (error) {
         console.error('Connection test invocation error:', error);

@@ -56,88 +56,138 @@ serve(async (req) => {
 
     const { socket, response } = Deno.upgradeWebSocket(req);
     
-    // Connect to Alpaca WebSocket
-    const alpacaWsUrl = alpacaKey.mode === 'paper'
-      ? 'wss://stream.data.alpaca.markets/v2/iex'
-      : 'wss://stream.data.alpaca.markets/v2/iex';
+    // Connect to Alpaca Stock WebSocket (v2/iex)
+    const stocksWsUrl = 'wss://stream.data.alpaca.markets/v2/iex';
+    const stocksSocket = new WebSocket(stocksWsUrl);
     
-    const alpacaSocket = new WebSocket(alpacaWsUrl);
+    // Connect to Alpaca Options WebSocket (v1beta1/options)
+    const optionsWsUrl = 'wss://stream.data.alpaca.markets/v1beta1/options';
+    const optionsSocket = new WebSocket(optionsWsUrl);
     
-    console.log('[WS] Connecting to Alpaca WebSocket...');
-    console.log('[WS] URL:', alpacaWsUrl);
+    console.log('[WS STOCKS] Connecting to Alpaca stocks WebSocket...');
+    console.log('[WS STOCKS] URL:', stocksWsUrl);
+    console.log('[WS OPTIONS] Connecting to Alpaca options WebSocket...');
+    console.log('[WS OPTIONS] URL:', optionsWsUrl);
     console.log('[WS] Mode:', alpacaKey.mode);
     console.log('[WS] API Key:', alpacaKey.api_key?.substring(0, 8) + '...');
 
-    alpacaSocket.onopen = () => {
-      console.log('[WS] Connected to Alpaca WebSocket - sending auth');
-      
-      // Authenticate with Alpaca
+    // Stocks WebSocket handlers
+    stocksSocket.onopen = () => {
+      console.log('[WS STOCKS] Connected - sending auth');
       const authMsg = {
         action: 'auth',
         key: alpacaKey.api_key,
         secret: alpacaKey.api_secret
       };
-      
-      console.log('[WS] Sending auth message');
-      alpacaSocket.send(JSON.stringify(authMsg));
+      stocksSocket.send(JSON.stringify(authMsg));
     };
 
-    alpacaSocket.onmessage = (event) => {
+    stocksSocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        console.log('[WS] Received from Alpaca:', JSON.stringify(data).substring(0, 200));
+        console.log('[WS STOCKS] Received:', JSON.stringify(data).substring(0, 200));
         
-        // Handle auth response
         if (data[0]?.T === 'success' && data[0]?.msg === 'authenticated') {
-          console.log('[WS] ✓ Alpaca authentication successful');
-          socket.send(JSON.stringify({ type: 'connected', message: 'Connected to Alpaca' }));
+          console.log('[WS STOCKS] ✓ Authenticated');
+          socket.send(JSON.stringify({ type: 'connected', stream: 'stocks', message: 'Stocks stream connected' }));
         } else if (data[0]?.T === 'error') {
-          console.error('[WS] ✗ Alpaca auth error:', data[0]?.msg);
-          socket.send(JSON.stringify({ type: 'error', message: data[0]?.msg || 'Authentication failed' }));
+          console.error('[WS STOCKS] ✗ Error:', data[0]?.msg);
+          socket.send(JSON.stringify({ type: 'error', stream: 'stocks', message: data[0]?.msg }));
         } else {
-          // Forward data to client
-          socket.send(event.data);
+          // Tag and forward stocks data
+          socket.send(JSON.stringify({ stream: 'stocks', data }));
         }
       } catch (error) {
-        console.error('[WS] Error processing Alpaca message:', error);
+        console.error('[WS STOCKS] Error processing message:', error);
       }
     };
 
-    alpacaSocket.onerror = (error) => {
-      console.error('[WS] ✗ Alpaca WebSocket error:', error);
-      socket.send(JSON.stringify({ type: 'error', message: 'Alpaca connection error' }));
+    stocksSocket.onerror = (error) => {
+      console.error('[WS STOCKS] ✗ Error:', error);
+      socket.send(JSON.stringify({ type: 'error', stream: 'stocks', message: 'Stocks connection error' }));
     };
 
-    alpacaSocket.onclose = (event) => {
-      console.log('[WS] Alpaca WebSocket closed');
-      console.log('[WS] Close code:', event.code);
-      console.log('[WS] Close reason:', event.reason);
-      socket.send(JSON.stringify({ type: 'disconnected', message: 'Alpaca connection closed' }));
+    stocksSocket.onclose = (event) => {
+      console.log('[WS STOCKS] Closed:', event.code, event.reason);
+      socket.send(JSON.stringify({ type: 'disconnected', stream: 'stocks' }));
+    };
+
+    // Options WebSocket handlers
+    optionsSocket.onopen = () => {
+      console.log('[WS OPTIONS] Connected - sending auth');
+      const authMsg = {
+        action: 'auth',
+        key: alpacaKey.api_key,
+        secret: alpacaKey.api_secret
+      };
+      optionsSocket.send(JSON.stringify(authMsg));
+    };
+
+    optionsSocket.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        console.log('[WS OPTIONS] Received:', JSON.stringify(data).substring(0, 200));
+        
+        if (data[0]?.T === 'success' && data[0]?.msg === 'authenticated') {
+          console.log('[WS OPTIONS] ✓ Authenticated');
+          socket.send(JSON.stringify({ type: 'connected', stream: 'options', message: 'Options stream connected' }));
+        } else if (data[0]?.T === 'error') {
+          console.error('[WS OPTIONS] ✗ Error:', data[0]?.msg);
+          socket.send(JSON.stringify({ type: 'error', stream: 'options', message: data[0]?.msg }));
+        } else {
+          // Tag and forward options data
+          socket.send(JSON.stringify({ stream: 'options', data }));
+        }
+      } catch (error) {
+        console.error('[WS OPTIONS] Error processing message:', error);
+      }
+    };
+
+    optionsSocket.onerror = (error) => {
+      console.error('[WS OPTIONS] ✗ Error:', error);
+      socket.send(JSON.stringify({ type: 'error', stream: 'options', message: 'Options connection error' }));
+    };
+
+    optionsSocket.onclose = (event) => {
+      console.log('[WS OPTIONS] Closed:', event.code, event.reason);
+      socket.send(JSON.stringify({ type: 'disconnected', stream: 'options' }));
     };
 
     // Handle messages from client (subscription requests)
     socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
-        console.log('Received from client:', message);
+        console.log('[WS CLIENT] Received:', message);
         
-        // Forward subscription requests to Alpaca
+        // Forward subscription requests to appropriate stream
         if (message.action === 'subscribe' || message.action === 'unsubscribe') {
-          alpacaSocket.send(JSON.stringify(message));
+          const stream = message.stream || 'stocks'; // default to stocks
+          
+          if (stream === 'stocks' || !message.stream) {
+            console.log('[WS CLIENT] Forwarding to stocks stream');
+            stocksSocket.send(JSON.stringify(message));
+          }
+          
+          if (stream === 'options' || message.optionSymbols) {
+            console.log('[WS CLIENT] Forwarding to options stream');
+            optionsSocket.send(JSON.stringify(message));
+          }
         }
       } catch (error) {
-        console.error('Error processing client message:', error);
+        console.error('[WS CLIENT] Error processing message:', error);
       }
     };
 
     socket.onclose = () => {
-      console.log('Client disconnected');
-      alpacaSocket.close();
+      console.log('[WS CLIENT] Disconnected');
+      stocksSocket.close();
+      optionsSocket.close();
     };
 
     socket.onerror = (error) => {
-      console.error('Client WebSocket error:', error);
-      alpacaSocket.close();
+      console.error('[WS CLIENT] Error:', error);
+      stocksSocket.close();
+      optionsSocket.close();
     };
 
     return response;

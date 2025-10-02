@@ -42,9 +42,14 @@ serve(async (req) => {
     const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca');
 
     if (dataType === 'options' && alpacaKey) {
-      // Fetch options contracts from Alpaca and map to existing client shape
+      console.log('[OPTIONS] Fetching options contracts from Alpaca');
       const baseUrl = 'https://data.alpaca.markets';
-      const url = `${baseUrl}/v1beta1/options/contracts?underlying_symbols=${symbol}&status=active&limit=1000`;
+      const encodedSymbol = encodeURIComponent(symbol);
+      const url = `${baseUrl}/v1beta1/options/contracts?underlying_symbols=${encodedSymbol}&status=active&limit=1000`;
+      
+      console.log('[OPTIONS] Request URL:', url);
+      console.log('[OPTIONS] API Key:', alpacaKey.api_key?.substring(0, 8) + '...');
+      
       const response = await fetch(url, {
         headers: {
           'APCA-API-KEY-ID': alpacaKey.api_key,
@@ -52,14 +57,21 @@ serve(async (req) => {
         },
       });
 
+      console.log('[OPTIONS] Response status:', response.status);
+
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('[OPTIONS] Error response:', errorText);
         throw new Error(`Alpaca options API error: ${response.status} - ${errorText}`);
       }
 
       const json = await response.json();
+      console.log('[OPTIONS] Response keys:', Object.keys(json));
+      
       const contracts = json.contracts || json.data?.contracts || json.results || [];
-      // Map Alpaca contract fields to the UI-friendly shape previously used
+      console.log('[OPTIONS] Found', contracts.length, 'contracts');
+      
+      // Map Alpaca contract fields to UI-friendly shape
       const mapped = contracts.map((c: any) => ({
         cfi: c.cfi || null,
         contract_type: (c.type || c.contract_type || '').toString().toLowerCase().includes('p') ? 'put' : 'call',
@@ -72,37 +84,45 @@ serve(async (req) => {
         underlying_ticker: c.underlying_symbol || c.underlying_ticker || symbol,
       }));
 
+      console.log('[OPTIONS] Mapped', mapped.length, 'contracts for UI');
       return new Response(
         JSON.stringify({ data: mapped }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else if (dataType === 'historical-options' && alpacaKey) {
-      // Fetch historical option bars from Alpaca
+      console.log('[OPTIONS BARS] Fetching historical option bars from Alpaca');
       const { contract, timeframe = '1Min', from, to } = await req.json();
       if (!contract) throw new Error('Contract ticker required for historical options data');
 
       const baseUrl = 'https://data.alpaca.markets';
       const url = `${baseUrl}/v1beta1/options/bars?symbols=${encodeURIComponent(contract)}&timeframe=${timeframe}&start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}&limit=50000`;
+      
+      console.log('[OPTIONS BARS] Request URL:', url);
+      
       const response = await fetch(url, {
         headers: {
           'APCA-API-KEY-ID': alpacaKey.api_key,
           'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
         },
       });
+      
+      console.log('[OPTIONS BARS] Response status:', response.status);
+      
       if (!response.ok) {
         const errorText = await response.text();
+        console.error('[OPTIONS BARS] Error:', errorText);
         throw new Error(`Alpaca options bars error: ${response.status} - ${errorText}`);
       }
       const data = await response.json();
+      console.log('[OPTIONS BARS] Success, returned data keys:', Object.keys(data));
+      
       return new Response(
         JSON.stringify({ data }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     } else if (dataType === 'quote' && alpacaKey) {
       // Fetch latest quote from Alpaca
-      const baseUrl = alpacaKey.mode === 'paper' 
-        ? 'https://data.alpaca.markets' 
-        : 'https://data.alpaca.markets';
+      const baseUrl = 'https://data.alpaca.markets';
       
       const response = await fetch(
         `${baseUrl}/v2/stocks/${symbol}/quotes/latest`,

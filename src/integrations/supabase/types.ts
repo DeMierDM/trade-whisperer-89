@@ -351,7 +351,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      api_provider: "polygon" | "alpaca" | "openai"
+      api_provider: "alpaca" | "openai"
       trading_mode: "paper" | "live"
     }
     CompositeTypes: {
@@ -480,7 +480,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      api_provider: ["polygon", "alpaca", "openai"],
+      api_provider: ["alpaca", "openai"],
       trading_mode: ["paper", "live"],
     },
   },

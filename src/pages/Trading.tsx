@@ -319,7 +319,7 @@ const Trading = () => {
     }
   }, [quotes, selectedSymbol, connected]);
 
-  // Update chart with live trade data from WebSocket
+  // Update chart with live trade data from WebSocket - normalized timestamps
   useEffect(() => {
     if (!connected || trades.length === 0) return;
     
@@ -328,12 +328,15 @@ const Trading = () => {
     
     if (latestTrade && bars.length > 0) {
       console.log('[WS CLIENT] ✓ Updating chart with live trade:', latestTrade);
-      const currentMinute = Math.floor(Date.now() / 60000) * 60000; // Minute bars
+      
+      // Parse the normalized timestamp from the trade
+      const tradeTime = new Date(latestTrade.timestamp).getTime();
+      const currentMinute = Math.floor(tradeTime / 60000) * 60000;
       
       setBars(prevBars => {
         const lastBar = prevBars[prevBars.length - 1];
         
-        // If last bar is for current minute, update it
+        // Match by normalized timestamp (minute epoch UTC)
         if (lastBar && lastBar.timestamp === currentMinute) {
           const updatedBar = {
             ...lastBar,
@@ -342,9 +345,9 @@ const Trading = () => {
             close: latestTrade.price,
             volume: lastBar.volume + latestTrade.size,
           };
-          console.log('[WS CLIENT] ✓ Updated current 1m bar with trade');
+          console.log('[WS CLIENT] ✓ Updated current 1m bar at', currentMinute);
           return [...prevBars.slice(0, -1), updatedBar];
-        } else {
+        } else if (currentMinute > lastBar.timestamp) {
           // Create new bar for new minute
           const newBar = {
             time: new Date(currentMinute).toLocaleTimeString('en-US', { 
@@ -361,9 +364,11 @@ const Trading = () => {
             close: latestTrade.price,
             volume: latestTrade.size,
           };
-          console.log('[WS CLIENT] ✓ Created new 1m bar for new minute');
+          console.log('[WS CLIENT] ✓ Created new 1m bar at', currentMinute);
           return [...prevBars, newBar];
         }
+        
+        return prevBars;
       });
       
       // Also update the header price display

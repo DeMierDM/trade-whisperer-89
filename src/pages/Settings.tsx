@@ -69,10 +69,25 @@ const Settings = () => {
   const alpacaApi = apiKeys.find((key) => key.provider === "alpaca");
 
   const handleTestConnection = async (provider: "alpaca") => {
+    if (!alpacaKey?.trim() || !alpacaSecret?.trim()) {
+      toast({
+        title: 'Missing credentials',
+        description: 'Please enter both API key and secret',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
     setTestingApi(provider);
-    await testConnection("alpaca", alpacaKey, alpacaSecret, alpacaMode);
+    const isConnected = await testConnection("alpaca", alpacaKey.trim(), alpacaSecret.trim(), alpacaMode);
     setTestingApi(null);
-    refetchApiKeys();
+    
+    if (isConnected) {
+      toast({
+        title: 'Connection successful',
+        description: 'Successfully connected to Alpaca',
+      });
+    }
   };
 
   const handleSaveApiKey = async () => {
@@ -90,13 +105,19 @@ const Settings = () => {
         throw new Error("Not authenticated");
       }
 
-      const keyData = { user_id: user.id, provider: "alpaca", api_key: alpacaKey, api_secret: alpacaSecret, mode: alpacaMode };
+      const keyData = {
+        user_id: user.id,
+        provider: 'alpaca' as const,
+        api_key: alpacaKey.trim(),
+        api_secret: alpacaSecret.trim(),
+        mode: alpacaMode,
+      };
 
       console.log('Upserting API key for provider: alpaca');
 
       const { error } = await supabase
         .from("api_keys")
-        .upsert(keyData, {
+        .upsert([keyData], {
           onConflict: 'user_id,provider'
         });
 
@@ -107,12 +128,13 @@ const Settings = () => {
       
       console.log(`alpaca API key saved successfully`);
       
+      // Refetch to update connection status in UI
+      await refetchApiKeys();
+      
       toast({
         title: "API key saved",
         description: `Your alpaca API key has been saved successfully`,
       });
-      
-      await refetchApiKeys();
     } catch (error: any) {
       console.error("Error saving API key:", error);
       toast({

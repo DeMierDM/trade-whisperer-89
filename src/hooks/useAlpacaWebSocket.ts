@@ -61,38 +61,43 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
 
         ws.onmessage = (event) => {
           try {
-            const data = JSON.parse(event.data);
-            console.log('[WS CLIENT] Received:', data);
+            const message = JSON.parse(event.data);
+            console.log('[WS CLIENT] Received:', message);
 
             // Handle connection confirmation
-            if (data.type === 'connected') {
-              console.log('[WS CLIENT] ✓ Connected to Alpaca via proxy');
+            if (message.type === 'connected') {
+              console.log('[WS CLIENT] ✓ Connected:', message.stream || 'stocks');
               
-              // Subscribe to symbols after connection is confirmed
-              if (symbols.length > 0) {
-                setTimeout(() => {
-                  console.log('[WS CLIENT] Subscribing to symbols:', symbols);
-                  ws.send(JSON.stringify({
-                    action: 'subscribe',
-                    quotes: symbols,
-                    trades: symbols
-                  }));
-                }, 500);
+              // Subscribe to symbols after stocks stream is confirmed
+              if (message.stream === 'stocks' || !message.stream) {
+                if (symbols.length > 0) {
+                  setTimeout(() => {
+                    console.log('[WS CLIENT] Subscribing to symbols:', symbols);
+                    ws.send(JSON.stringify({
+                      action: 'subscribe',
+                      quotes: symbols,
+                      trades: symbols
+                    }));
+                  }, 500);
+                }
               }
               return;
             }
 
             // Handle errors
-            if (data.type === 'error') {
-              console.error('[WS CLIENT] ✗ Error:', data.message);
+            if (message.type === 'error') {
+              console.error('[WS CLIENT] ✗ Error:', message.stream, message.message);
               toast({
                 title: 'WebSocket Error',
-                description: data.message,
+                description: `${message.stream || ''} ${message.message}`,
                 variant: 'destructive',
               });
               return;
             }
 
+            // Handle tagged data from proxy
+            const data = message.stream ? message.data : message;
+            
             if (Array.isArray(data)) {
               data.forEach((item: any) => {
                 // Handle subscription confirmations
@@ -123,13 +128,16 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
                   }
                 }
                 
-                // Handle trades
+                // Handle trades - normalize timestamp to minute epoch (UTC)
                 if (item.T === 't') {
+                  const tradeTimestamp = new Date(item.t).getTime();
+                  const normalizedTimestamp = Math.floor(tradeTimestamp / 60000) * 60000;
+                  
                   const trade: Trade = {
                     symbol: item.S,
                     price: item.p,
                     size: item.s,
-                    timestamp: item.t
+                    timestamp: new Date(normalizedTimestamp).toISOString()
                   };
                   
                   console.log('[WS CLIENT] Trade:', trade);
