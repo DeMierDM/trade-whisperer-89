@@ -194,7 +194,7 @@ const Trading = () => {
           symbol: selectedSymbol,
           start: start,
           end: end,
-          timeframe: '1Hour' // Use hourly for more reliable data
+          timeframe: '1Min' // Use 1m for live charting
         },
       });
 
@@ -328,13 +328,13 @@ const Trading = () => {
     
     if (latestTrade && bars.length > 0) {
       console.log('[WS CLIENT] ✓ Updating chart with live trade:', latestTrade);
-      const currentHour = Math.floor(Date.now() / 3600000) * 3600000; // Hourly bars
+      const currentMinute = Math.floor(Date.now() / 60000) * 60000; // Minute bars
       
       setBars(prevBars => {
         const lastBar = prevBars[prevBars.length - 1];
         
-        // If last bar is for current hour, update it
-        if (lastBar && lastBar.timestamp === currentHour) {
+        // If last bar is for current minute, update it
+        if (lastBar && lastBar.timestamp === currentMinute) {
           const updatedBar = {
             ...lastBar,
             high: Math.max(lastBar.high, latestTrade.price),
@@ -342,26 +342,26 @@ const Trading = () => {
             close: latestTrade.price,
             volume: lastBar.volume + latestTrade.size,
           };
-          console.log('[WS CLIENT] ✓ Updated current bar with trade');
+          console.log('[WS CLIENT] ✓ Updated current 1m bar with trade');
           return [...prevBars.slice(0, -1), updatedBar];
         } else {
-          // Create new bar for new hour
+          // Create new bar for new minute
           const newBar = {
-            time: new Date(currentHour).toLocaleTimeString('en-US', { 
+            time: new Date(currentMinute).toLocaleTimeString('en-US', { 
               hour: '2-digit', 
               minute: '2-digit', 
               hour12: false, 
               timeZone: 'America/New_York' 
             }),
-            timestamp: currentHour,
-            date: new Date(currentHour).toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
+            timestamp: currentMinute,
+            date: new Date(currentMinute).toLocaleDateString('en-US', { timeZone: 'America/New_York' }),
             open: latestTrade.price,
             high: latestTrade.price,
             low: latestTrade.price,
             close: latestTrade.price,
             volume: latestTrade.size,
           };
-          console.log('[WS CLIENT] ✓ Created new bar for new hour');
+          console.log('[WS CLIENT] ✓ Created new 1m bar for new minute');
           return [...prevBars, newBar];
         }
       });
