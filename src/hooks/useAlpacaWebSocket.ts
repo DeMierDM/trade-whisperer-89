@@ -45,14 +45,12 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
 
         console.log('[WS CLIENT] ✓ Session found, connecting to WebSocket proxy...');
 
-        // Use the actual Supabase project URL
-        const wsUrl = `wss://uroueekwllvjcueyrmrg.supabase.co/functions/v1/alpaca-websocket`;
-        console.log('[WS CLIENT] WebSocket URL:', wsUrl);
+        // Pass auth token as query parameter (browsers can't set custom WS headers)
+        const wsUrl = `wss://uroueekwllvjcueyrmrg.supabase.co/functions/v1/alpaca-websocket?token=${encodeURIComponent(session.access_token)}`;
+        console.log('[WS CLIENT] WebSocket URL constructed');
         console.log('[WS CLIENT] Auth token length:', session.access_token.length);
 
-        const ws = new WebSocket(wsUrl, [
-          `Bearer ${session.access_token}`,
-        ]);
+        const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
           console.log('[WS CLIENT] WebSocket connection opened');

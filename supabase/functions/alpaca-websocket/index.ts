@@ -19,20 +19,15 @@ serve(async (req) => {
       return new Response("Expected WebSocket connection", { status: 400 });
     }
 
-    // Extract auth token: prefer Authorization header, fallback to Sec-WebSocket-Protocol carrying "Bearer <token>"
-    let authHeader = req.headers.get('Authorization') || '';
-    if (!authHeader) {
-      const proto = req.headers.get('sec-websocket-protocol') || '';
-      // Some browsers send a comma-separated list; take the first value
-      const firstProto = proto.split(',')[0]?.trim();
-      if (firstProto && firstProto.toLowerCase().startsWith('bearer ')) {
-        authHeader = firstProto;
-      }
+    // Extract auth token from query parameter (browser WebSocket limitation)
+    const url = new URL(req.url);
+    const token = url.searchParams.get('token');
+    
+    if (!token) {
+      throw new Error('No authorization token found in query parameters');
     }
 
-    if (!authHeader) {
-      throw new Error('No authorization token found');
-    }
+    const authHeader = `Bearer ${token}`;
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
