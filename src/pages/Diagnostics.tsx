@@ -119,7 +119,7 @@ const Diagnostics = () => {
               <h3 className="font-medium mb-2">Trading Tab</h3>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Alpaca WebSocket - Real-time quotes for underlying</li>
-                <li>• Polygon API - Options chain data</li>
+                <li>• Alpaca Options API - Options chain data</li>
                 <li>• Note: Paper trading has 15-minute delay for quotes</li>
               </ul>
             </div>
@@ -128,7 +128,7 @@ const Diagnostics = () => {
               <h3 className="font-medium mb-2">Backtesting Tab</h3>
               <ul className="text-sm text-muted-foreground space-y-1">
                 <li>• Alpaca Data API - Historical stock bars (data.alpaca.markets)</li>
-                <li>• Polygon API - Historical options data (if needed)</li>
+                <li>• Alpaca Options API - Historical options data</li>
                 <li>• Requires date range in RFC3339 format</li>
               </ul>
             </div>

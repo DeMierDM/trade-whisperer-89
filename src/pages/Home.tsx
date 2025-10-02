@@ -302,9 +302,9 @@ const Home = () => {
             <h3 className="text-lg font-semibold mb-4">Market Status</h3>
             <div className="space-y-3">
               {[
-                { name: "Polygon Data", status: "Connected", latency: "12ms", ok: true },
+                { name: "Alpaca Data", status: "Connected", latency: "12ms", ok: true },
                 { name: "Alpaca Broker", status: "Connected", latency: "8ms", ok: true },
-                { name: "Options Chain", status: "Live", latency: "45ms", ok: true },
+                { name: "Options Chain (Alpaca)", status: "Live", latency: "45ms", ok: true },
               ].map((service) => (
                 <div key={service.name} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                   <div className="flex items-center gap-3">

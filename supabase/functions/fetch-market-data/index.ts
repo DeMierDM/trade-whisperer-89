@@ -39,44 +39,61 @@ serve(async (req) => {
 
     if (keysError) throw keysError;
 
-    const polygonKey = apiKeys?.find(k => k.provider === 'polygon');
     const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca');
 
-    if (dataType === 'options' && polygonKey) {
-      // Fetch historical options contracts from Polygon (Options Starter plan)
-      // Get all available contracts for backtesting
-      const response = await fetch(
-        `https://api.polygon.io/v3/reference/options/contracts?underlying_ticker=${symbol}&limit=1000&apiKey=${polygonKey.api_key}`
-      );
+    if (dataType === 'options' && alpacaKey) {
+      // Fetch options contracts from Alpaca and map to existing client shape
+      const baseUrl = 'https://data.alpaca.markets';
+      const url = `${baseUrl}/v1beta1/options/contracts?underlying_symbols=${symbol}&status=active&limit=1000`;
+      const response = await fetch(url, {
+        headers: {
+          'APCA-API-KEY-ID': alpacaKey.api_key,
+          'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+        },
+      });
 
       if (!response.ok) {
-        throw new Error(`Polygon API error: ${await response.text()}`);
+        const errorText = await response.text();
+        throw new Error(`Alpaca options API error: ${response.status} - ${errorText}`);
       }
 
-      const data = await response.json();
-      
+      const json = await response.json();
+      const contracts = json.contracts || json.data?.contracts || json.results || [];
+      // Map Alpaca contract fields to the UI-friendly shape previously used
+      const mapped = contracts.map((c: any) => ({
+        cfi: c.cfi || null,
+        contract_type: (c.type || c.contract_type || '').toString().toLowerCase().includes('p') ? 'put' : 'call',
+        exercise_style: (c.style || c.exercise_style || 'american').toString().toLowerCase(),
+        expiration_date: c.expiration_date,
+        primary_exchange: c.exchange || c.primary_exchange || 'OPRA',
+        shares_per_contract: c.shares_per_contract || 100,
+        strike_price: c.strike || c.strike_price,
+        ticker: c.symbol || c.ticker,
+        underlying_ticker: c.underlying_symbol || c.underlying_ticker || symbol,
+      }));
+
       return new Response(
-        JSON.stringify({ data: data.results }),
+        JSON.stringify({ data: mapped }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
-    } else if (dataType === 'historical-options' && polygonKey) {
-      // Fetch historical minute/day aggregates for a specific options contract
-      const { contract, timeframe = '1', from, to } = await req.json();
-      
-      if (!contract) {
-        throw new Error('Contract ticker required for historical options data');
-      }
-      
-      const response = await fetch(
-        `https://api.polygon.io/v2/aggs/ticker/${contract}/range/${timeframe}/minute/${from}/${to}?adjusted=true&sort=asc&limit=50000&apiKey=${polygonKey.api_key}`
-      );
+    } else if (dataType === 'historical-options' && alpacaKey) {
+      // Fetch historical option bars from Alpaca
+      const { contract, timeframe = '1Min', from, to } = await req.json();
+      if (!contract) throw new Error('Contract ticker required for historical options data');
 
+      const baseUrl = 'https://data.alpaca.markets';
+      const url = `${baseUrl}/v1beta1/options/bars?symbols=${encodeURIComponent(contract)}&timeframe=${timeframe}&start=${encodeURIComponent(from)}&end=${encodeURIComponent(to)}&limit=50000`;
+      const response = await fetch(url, {
+        headers: {
+          'APCA-API-KEY-ID': alpacaKey.api_key,
+          'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+        },
+      });
       if (!response.ok) {
-        throw new Error(`Polygon API error: ${await response.text()}`);
+        const errorText = await response.text();
+        throw new Error(`Alpaca options bars error: ${response.status} - ${errorText}`);
       }
-
       const data = await response.json();
-      
       return new Response(
         JSON.stringify({ data }),
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }

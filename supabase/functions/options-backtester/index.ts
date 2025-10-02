@@ -88,12 +88,11 @@ Deno.serve(async (req) => {
       .select('provider, api_key, api_secret')
       .eq('user_id', user.id);
 
-    const polygonKey = apiKeys?.find(k => k.provider === 'polygon')?.api_key;
     const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca')?.api_key;
     const alpacaSecret = apiKeys?.find(k => k.provider === 'alpaca')?.api_secret;
 
-    if (!polygonKey || !alpacaKey || !alpacaSecret) {
-      throw new Error('Missing API keys');
+    if (!alpacaKey || !alpacaSecret) {
+      throw new Error('Missing Alpaca API keys');
     }
 
     // Fetch historical underlying data from Alpaca Data API

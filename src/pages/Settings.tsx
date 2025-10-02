@@ -19,7 +19,7 @@ const Settings = () => {
   const { defaults, loading: defaultsLoading, saveDefaults } = useStrategyDefaults();
 
   // API Keys State
-  const [polygonKey, setPolygonKey] = useState("");
+  
   const [alpacaKey, setAlpacaKey] = useState("");
   const [alpacaSecret, setAlpacaSecret] = useState("");
   const [alpacaMode, setAlpacaMode] = useState<"paper" | "live">("paper");
@@ -66,23 +66,18 @@ const Settings = () => {
     }
   }, [defaults]);
 
-  const polygonApi = apiKeys.find((key) => key.provider === "polygon");
   const alpacaApi = apiKeys.find((key) => key.provider === "alpaca");
 
-  const handleTestConnection = async (provider: "polygon" | "alpaca") => {
+  const handleTestConnection = async (provider: "alpaca") => {
     setTestingApi(provider);
-    if (provider === "polygon") {
-      await testConnection("polygon", polygonKey);
-    } else {
-      await testConnection("alpaca", alpacaKey, alpacaSecret, alpacaMode);
-    }
+    await testConnection("alpaca", alpacaKey, alpacaSecret, alpacaMode);
     setTestingApi(null);
     refetchApiKeys();
   };
 
-  const handleSaveApiKey = async (provider: "polygon" | "alpaca") => {
+  const handleSaveApiKey = async () => {
     try {
-      console.log(`Saving ${provider} API key...`);
+      console.log(`Saving alpaca API key...`);
       
       const { data: { user }, error: userError } = await supabase.auth.getUser();
       
@@ -95,11 +90,9 @@ const Settings = () => {
         throw new Error("Not authenticated");
       }
 
-      const keyData = provider === "polygon" 
-        ? { user_id: user.id, provider, api_key: polygonKey }
-        : { user_id: user.id, provider, api_key: alpacaKey, api_secret: alpacaSecret, mode: alpacaMode };
+      const keyData = { user_id: user.id, provider: "alpaca", api_key: alpacaKey, api_secret: alpacaSecret, mode: alpacaMode };
 
-      console.log('Upserting API key for provider:', provider);
+      console.log('Upserting API key for provider: alpaca');
 
       const { error } = await supabase
         .from("api_keys")
@@ -112,11 +105,11 @@ const Settings = () => {
         throw error;
       }
       
-      console.log(`${provider} API key saved successfully`);
+      console.log(`alpaca API key saved successfully`);
       
       toast({
         title: "API key saved",
-        description: `Your ${provider} API key has been saved successfully`,
+        description: `Your alpaca API key has been saved successfully`,
       });
       
       await refetchApiKeys();
@@ -163,49 +156,6 @@ const Settings = () => {
 
           <TabsContent value="api" className="mt-4">
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Polygon API */}
-              <Card className="p-6 bg-gradient-card border-border shadow-card">
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-xl font-semibold">Polygon.io</h2>
-                  <Badge variant="outline" className={polygonApi?.is_connected ? "bg-success/10 text-success border-success" : "bg-warning/10 text-warning border-warning"}>
-                    {polygonApi?.is_connected ? (
-                      <><CheckCircle2 className="w-3 h-3 mr-1" />Connected</>
-                    ) : (
-                      <><AlertTriangle className="w-3 h-3 mr-1" />Not Connected</>
-                    )}
-                  </Badge>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <Label>API Key</Label>
-                    <Input 
-                      type="password" 
-                      placeholder="Enter your Polygon API key" 
-                      className="mt-1"
-                      value={polygonKey}
-                      onChange={(e) => setPolygonKey(e.target.value)}
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button 
-                      variant="outline" 
-                      className="flex-1"
-                      onClick={() => handleSaveApiKey("polygon")}
-                      disabled={!polygonKey}
-                    >
-                      Save
-                    </Button>
-                    <Button 
-                      variant="outline" 
-                      className="flex-1"
-                      onClick={() => handleTestConnection("polygon")}
-                      disabled={!polygonKey || testingApi === "polygon"}
-                    >
-                      {testingApi === "polygon" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Test"}
-                    </Button>
-                  </div>
-                </div>
-              </Card>
 
               {/* Alpaca API */}
               <Card className="p-6 bg-gradient-card border-border shadow-card">
@@ -255,7 +205,7 @@ const Settings = () => {
                     <Button 
                       variant="outline" 
                       className="flex-1"
-                      onClick={() => handleSaveApiKey("alpaca")}
+                      onClick={() => handleSaveApiKey()}
                       disabled={!alpacaKey || !alpacaSecret}
                     >
                       Save

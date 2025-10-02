@@ -38,7 +38,7 @@ export const useApiDiagnostics = () => {
         status: 'pending',
       },
       {
-        name: 'Polygon Options Chain',
+        name: 'Alpaca Options Chain',
         endpoint: 'fetch-market-data (options)',
         status: 'pending',
       },

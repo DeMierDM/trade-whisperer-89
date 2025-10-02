@@ -35,28 +35,7 @@ serve(async (req) => {
 
     console.log(`Testing ${provider} connection for user ${user.id}`);
 
-    if (provider === 'polygon') {
-      // Test Polygon API with historical options data (Options Starter plan)
-      const today = new Date();
-      const thirtyDaysAgo = new Date(today);
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      
-      const toDate = today.toISOString().split('T')[0];
-      const fromDate = thirtyDaysAgo.toISOString().split('T')[0];
-      
-      // Test with historical minute aggregates for SPY (this should work with Options Starter)
-      const response = await fetch(
-        `https://api.polygon.io/v2/aggs/ticker/SPY/range/1/day/${fromDate}/${toDate}?adjusted=true&sort=asc&apiKey=${apiKey}`
-      );
-      isConnected = response.ok;
-      message = response.ok ? 'Polygon connected successfully - Historical data access confirmed' : 'Polygon connection failed';
-      
-      if (!response.ok) {
-        const errorData = await response.text();
-        console.error('Polygon error:', errorData);
-        message += `: ${errorData}`;
-      }
-    } else if (provider === 'alpaca') {
+    if (provider === 'alpaca') {
       // Test Alpaca API
       const baseUrl = mode === 'paper' 
         ? 'https://paper-api.alpaca.markets' 
