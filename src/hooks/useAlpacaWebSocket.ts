@@ -22,7 +22,10 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
   const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
   const [trades, setTrades] = useState<Trade[]>([]);
   const [connected, setConnected] = useState(false);
+  const [lastError, setLastError] = useState<string | null>(null);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -31,10 +34,13 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
     const connectWebSocket = async () => {
       try {
         console.log('[WS CLIENT] Starting WebSocket connection process...');
+        console.log('[WS CLIENT] Reconnect attempt:', reconnectAttempts);
         
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) {
-          console.log('[WS CLIENT] ✗ No session found - cannot connect');
+          const errorMsg = 'No session found - please log in';
+          console.log('[WS CLIENT] ✗', errorMsg);
+          setLastError(errorMsg);
           toast({
             title: 'Authentication Required',
             description: 'Please log in to access live market data',
@@ -44,18 +50,26 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
         }
 
         console.log('[WS CLIENT] ✓ Session found, connecting to WebSocket proxy...');
+        console.log('[WS CLIENT] User ID:', session.user.id);
+        console.log('[WS CLIENT] Token expires at:', new Date(session.expires_at! * 1000).toISOString());
 
         // Pass auth token as query parameter (browsers can't set custom WS headers)
         const wsUrl = `wss://uroueekwllvjcueyrmrg.supabase.co/functions/v1/alpaca-websocket?token=${encodeURIComponent(session.access_token)}`;
         console.log('[WS CLIENT] WebSocket URL constructed');
-        console.log('[WS CLIENT] Auth token length:', session.access_token.length);
+        console.log('[WS CLIENT] Initiating connection...');
 
         const ws = new WebSocket(wsUrl);
 
         ws.onopen = () => {
-          console.log('[WS CLIENT] WebSocket connection opened');
+          console.log('[WS CLIENT] ✓ WebSocket connection opened successfully');
           if (mounted) {
             setConnected(true);
+            setLastError(null);
+            setReconnectAttempts(0);
+            toast({
+              title: 'Connected',
+              description: 'Live market data stream connected',
+            });
           }
         };
 
@@ -86,12 +100,24 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
 
             // Handle errors
             if (message.type === 'error') {
-              console.error('[WS CLIENT] ✗ Error:', message.stream, message.message);
-              toast({
-                title: 'WebSocket Error',
-                description: `${message.stream || ''} ${message.message}`,
-                variant: 'destructive',
-              });
+              const errorMsg = `${message.stream || 'WebSocket'}: ${message.message}`;
+              console.error('[WS CLIENT] ✗ Error:', errorMsg);
+              setLastError(errorMsg);
+              
+              // Show toast for critical errors
+              if (message.message.includes('401') || message.message.includes('403')) {
+                toast({
+                  title: 'Authentication Error',
+                  description: 'Please check your API keys in Settings',
+                  variant: 'destructive',
+                });
+              } else {
+                toast({
+                  title: 'WebSocket Error',
+                  description: errorMsg,
+                  variant: 'destructive',
+                });
+              }
               return;
             }
 
@@ -154,30 +180,51 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
         };
 
         ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          if (mounted) {
-            toast({
-              title: 'Connection Error',
-              description: 'Failed to connect to live market data',
-              variant: 'destructive',
-            });
-          }
+          const errorMsg = 'WebSocket connection failed';
+          console.error('[WS CLIENT] ✗ Error:', error);
+          console.error('[WS CLIENT] Error type:', error.type);
+          setLastError(errorMsg);
         };
 
-        ws.onclose = () => {
-          console.log('WebSocket disconnected');
+        ws.onclose = (event) => {
+          console.log('[WS CLIENT] WebSocket disconnected');
+          console.log('[WS CLIENT] Close code:', event.code);
+          console.log('[WS CLIENT] Close reason:', event.reason);
+          console.log('[WS CLIENT] Was clean:', event.wasClean);
+          
           if (mounted) {
             setConnected(false);
-            // Attempt to reconnect after 5 seconds
-            setTimeout(() => {
-              if (mounted) connectWebSocket();
-            }, 5000);
+            
+            // Exponential backoff for reconnection
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+            console.log(`[WS CLIENT] Reconnecting in ${delay}ms...`);
+            
+            setReconnectAttempts(prev => prev + 1);
+            
+            reconnectTimeoutRef.current = setTimeout(() => {
+              if (mounted) {
+                console.log('[WS CLIENT] Attempting reconnection...');
+                connectWebSocket();
+              }
+            }, delay);
           }
         };
 
         wsRef.current = ws;
-      } catch (error) {
-        console.error('Error connecting WebSocket:', error);
+      } catch (error: any) {
+        const errorMsg = error.message || 'Failed to connect to WebSocket';
+        console.error('[WS CLIENT] ✗ Connection error:', error);
+        setLastError(errorMsg);
+        
+        if (mounted) {
+          // Retry with backoff
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
+          setReconnectAttempts(prev => prev + 1);
+          
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (mounted) connectWebSocket();
+          }, delay);
+        }
       }
     };
 
@@ -185,12 +232,16 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
 
     return () => {
       mounted = false;
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
       if (wsRef.current) {
+        console.log('[WS CLIENT] Cleaning up connection');
         wsRef.current.close();
         wsRef.current = null;
       }
     };
-  }, [symbols.join(','), toast]);
+  }, [symbols.join(','), toast, reconnectAttempts]);
 
   const subscribe = (newSymbols: string[]) => {
     if (wsRef.current && connected) {
@@ -212,11 +263,26 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
     }
   };
 
+  const forceReconnect = () => {
+    console.log('[WS CLIENT] Force reconnect requested');
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+    if (reconnectTimeoutRef.current) {
+      clearTimeout(reconnectTimeoutRef.current);
+    }
+    setReconnectAttempts(0);
+    setLastError(null);
+  };
+
   return {
     quotes,
     trades,
     connected,
+    lastError,
+    reconnectAttempts,
     subscribe,
-    unsubscribe
+    unsubscribe,
+    forceReconnect,
   };
 };

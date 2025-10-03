@@ -37,7 +37,14 @@ const Trading = () => {
   const [marketStatus, setMarketStatus] = useState<MarketStatus>(getMarketStatus());
   
   // Use WebSocket for live data
-  const { quotes, trades, connected } = useAlpacaWebSocket([selectedSymbol]);
+  const { 
+    quotes, 
+    trades, 
+    connected, 
+    lastError: wsError,
+    reconnectAttempts,
+    forceReconnect 
+  } = useAlpacaWebSocket([selectedSymbol]);
 
   // Update market status every minute
   useEffect(() => {
@@ -111,6 +118,19 @@ const Trading = () => {
 
       if (error) {
         console.error('[OPTIONS CLIENT] ✗ Error:', error);
+        
+        // Check if it's a 404 (no access to options data)
+        if (error.message?.includes('404')) {
+          toast({
+            title: 'Options Data Unavailable',
+            description: 'Options data requires an upgraded Alpaca account. Paper accounts have limited options access.',
+            variant: 'destructive',
+          });
+          setOptionsData([]);
+          setLoading(false);
+          return;
+        }
+        
         throw error;
       }
 
@@ -451,6 +471,9 @@ const Trading = () => {
                 marketStatus={marketStatus.status}
                 latestQuote={quotes.get(selectedSymbol)}
                 latestTrade={trades[0]}
+                wsError={wsError}
+                reconnectAttempts={reconnectAttempts}
+                onForceReconnect={forceReconnect}
               />
             </div>
 

@@ -11,6 +11,7 @@ import { useRiskControls } from "@/hooks/useRiskControls";
 import { useStrategyDefaults } from "@/hooks/useStrategyDefaults";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { ApiDiagnostics } from "@/components/ApiDiagnostics";
 
 const Settings = () => {
   const { toast } = useToast();
@@ -172,6 +173,7 @@ const Settings = () => {
         <Tabs defaultValue="api" className="w-full">
           <TabsList className="bg-secondary">
             <TabsTrigger value="api">API Keys</TabsTrigger>
+            <TabsTrigger value="diagnostics">Diagnostics</TabsTrigger>
             <TabsTrigger value="risk">Risk Controls</TabsTrigger>
             <TabsTrigger value="strategy">Strategy Defaults</TabsTrigger>
           </TabsList>
@@ -240,6 +242,61 @@ const Settings = () => {
                     >
                       {testingApi === "alpaca" ? <Loader2 className="w-4 h-4 animate-spin" /> : "Test"}
                     </Button>
+                  </div>
+                </div>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="diagnostics" className="mt-4">
+            <div className="max-w-3xl mx-auto space-y-4">
+              <ApiDiagnostics />
+              
+              <Card className="p-6 bg-gradient-card border-border shadow-card">
+                <h3 className="text-lg font-semibold mb-4">Account Information</h3>
+                <div className="space-y-3 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Account Type:</span>
+                    <Badge variant="outline">{alpacaMode}</Badge>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Connection Status:</span>
+                    <Badge variant={alpacaApi?.is_connected ? "default" : "secondary"}>
+                      {alpacaApi?.is_connected ? "Connected" : "Not Connected"}
+                    </Badge>
+                  </div>
+                  {alpacaApi?.last_tested_at && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Last Tested:</span>
+                      <span>{new Date(alpacaApi.last_tested_at).toLocaleString()}</span>
+                    </div>
+                  )}
+                </div>
+              </Card>
+
+              <Card className="p-6 bg-gradient-card border-border shadow-card">
+                <h3 className="text-lg font-semibold mb-4">Feature Access</h3>
+                <div className="space-y-2 text-sm">
+                  <div className="flex items-center gap-2 p-2 rounded bg-background/50">
+                    <CheckCircle2 className="w-4 h-4 text-success" />
+                    <span>Stock Data (Real-time & Historical)</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 rounded bg-background/50">
+                    <CheckCircle2 className="w-4 h-4 text-success" />
+                    <span>Account & Position Data</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 rounded bg-background/50">
+                    <CheckCircle2 className="w-4 h-4 text-success" />
+                    <span>Order History</span>
+                  </div>
+                  <div className="flex items-center gap-2 p-2 rounded bg-warning/10">
+                    <AlertTriangle className="w-4 h-4 text-warning" />
+                    <div className="flex-1">
+                      <div>Options Data (Limited on Paper Accounts)</div>
+                      <div className="text-xs text-muted-foreground mt-1">
+                        Upgrade to a live account for full options access
+                      </div>
+                    </div>
                   </div>
                 </div>
               </Card>

@@ -1,6 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, XCircle, Loader2, Activity } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { CheckCircle, XCircle, Loader2, Activity, RefreshCw, AlertTriangle } from "lucide-react";
 
 interface DataFlowDebugPanelProps {
   wsConnected: boolean;
@@ -11,6 +12,9 @@ interface DataFlowDebugPanelProps {
   marketStatus: string;
   latestQuote?: { symbol: string; bid: number; ask: number };
   latestTrade?: { symbol: string; price: number; timestamp: string };
+  wsError?: string | null;
+  reconnectAttempts?: number;
+  onForceReconnect?: () => void;
 }
 
 export const DataFlowDebugPanel = ({
@@ -22,6 +26,9 @@ export const DataFlowDebugPanel = ({
   marketStatus,
   latestQuote,
   latestTrade,
+  wsError,
+  reconnectAttempts = 0,
+  onForceReconnect,
 }: DataFlowDebugPanelProps) => {
   return (
     <Card className="p-4 bg-gradient-card border-border shadow-card">
@@ -37,21 +44,54 @@ export const DataFlowDebugPanel = ({
 
       <div className="space-y-3 text-xs">
         {/* WebSocket Status */}
-        <div className="flex items-center justify-between p-2 rounded bg-background/50 border border-border">
-          <span className="text-muted-foreground">WebSocket Connection</span>
-          <div className="flex items-center gap-2">
-            {wsConnected ? (
-              <>
-                <CheckCircle className="w-4 h-4 text-success" />
-                <span className="text-success font-medium">Connected</span>
-              </>
-            ) : (
-              <>
-                <XCircle className="w-4 h-4 text-danger" />
-                <span className="text-danger font-medium">Disconnected</span>
-              </>
-            )}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between p-2 rounded bg-background/50 border border-border">
+            <span className="text-muted-foreground">WebSocket Connection</span>
+            <div className="flex items-center gap-2">
+              {wsConnected ? (
+                <>
+                  <CheckCircle className="w-4 h-4 text-success" />
+                  <span className="text-success font-medium">Connected</span>
+                </>
+              ) : (
+                <>
+                  <XCircle className="w-4 h-4 text-danger" />
+                  <span className="text-danger font-medium">Disconnected</span>
+                  {reconnectAttempts > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      Retry {reconnectAttempts}
+                    </Badge>
+                  )}
+                </>
+              )}
+            </div>
           </div>
+          
+          {/* WebSocket Error Display */}
+          {wsError && (
+            <div className="p-2 rounded bg-danger/10 border border-danger/20">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-danger mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-medium text-danger mb-1">Connection Error</div>
+                  <div className="text-xs text-danger/80 break-words">{wsError}</div>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          {/* Force Reconnect Button */}
+          {!wsConnected && onForceReconnect && (
+            <Button 
+              size="sm" 
+              variant="outline" 
+              className="w-full"
+              onClick={onForceReconnect}
+            >
+              <RefreshCw className="w-3 h-3 mr-2" />
+              Force Reconnect
+            </Button>
+          )}
         </div>
 
         {/* Real-time Quotes */}
