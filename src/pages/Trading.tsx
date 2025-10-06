@@ -237,7 +237,17 @@ const Trading = () => {
       }
 
       if (data?.error) {
-        throw new Error(data.error);
+        // Check if it's an options-related error on paper account
+        if (data.error.includes('Options data not available') || data.error.includes('paper trading')) {
+          toast({
+            title: 'Options Data Unavailable',
+            description: 'Paper trading accounts have limited options data access. Historical stock bars will be shown instead.',
+            variant: 'default',
+          });
+          // Continue with whatever stock data we have
+        } else {
+          throw new Error(data.error);
+        }
       }
 
       const payload = data?.data;
