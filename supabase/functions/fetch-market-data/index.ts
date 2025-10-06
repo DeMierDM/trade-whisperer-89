@@ -128,15 +128,27 @@ serve(async (req) => {
           params.append('strike_price', strikePrice.toString());
         }
         
-        const url = `${baseUrl}/v1beta1/options/contracts?${params.toString()}`;
-        console.log('[OPTIONS CHAIN] Request URL:', url);
+        let url = `${baseUrl}/v2/options/contracts?${params.toString()}`;
+        console.log('[OPTIONS CHAIN] Request URL (v2):', url);
         
-        const response = await fetch(url, {
+        let response = await fetch(url, {
           headers: {
             'APCA-API-KEY-ID': alpacaKey.api_key,
             'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
           },
         });
+
+        if (response.status === 404) {
+          // Fallback to legacy beta endpoint if v2 not available
+          url = `${baseUrl}/v1beta1/options/contracts?${params.toString()}`;
+          console.warn('[OPTIONS CHAIN] v2 returned 404. Falling back to v1beta1:', url);
+          response = await fetch(url, {
+            headers: {
+              'APCA-API-KEY-ID': alpacaKey.api_key,
+              'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+            },
+          });
+        }
 
         console.log('[OPTIONS CHAIN] Response status:', response.status, response.statusText);
 
@@ -146,28 +158,29 @@ serve(async (req) => {
           
           // Paper accounts have limited options data access
           if (response.status === 404) {
-            console.warn('[OPTIONS CHAIN] Paper account limitation detected');
-            console.warn('[OPTIONS CHAIN] Returning simulated options chain based on stock data');
-            
-            // Fetch underlying stock price to generate simulated chain
-            const quoteResponse = await fetch(`${baseUrl}/v2/stocks/${symbol}/quotes/latest`, {
-              headers: {
-                'APCA-API-KEY-ID': alpacaKey.api_key,
-                'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
-              },
-            });
-            
-            if (quoteResponse.ok) {
-              const quoteData = await quoteResponse.json();
-              const stockPrice = quoteData.quote?.ap || quoteData.quote?.bp || 100;
+            console.warn('[OPTIONS CHAIN] 404 from Alpaca options contracts');
+            if (requestBody?.allowSimulated) {
+              console.warn('[OPTIONS CHAIN] Returning simulated options chain based on stock data (allowSimulated=true)');
+              // Fetch underlying stock price to generate simulated chain
+              const quoteResponse = await fetch(`${baseUrl}/v2/stocks/${symbol}/quotes/latest`, {
+                headers: {
+                  'APCA-API-KEY-ID': alpacaKey.api_key,
+                  'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+                },
+              });
               
-              // Generate simulated options chain
-              const simulated = generateSimulatedOptionsChain(symbol, stockPrice, expirationDate);
-              console.log('[OPTIONS CHAIN] Generated', simulated.length, 'simulated contracts');
-              return simulated;
+              if (quoteResponse.ok) {
+                const quoteData = await quoteResponse.json();
+                const stockPrice = quoteData.quote?.ap || quoteData.quote?.bp || 100;
+                
+                // Generate simulated options chain
+                const simulated = generateSimulatedOptionsChain(symbol, stockPrice, expirationDate);
+                console.log('[OPTIONS CHAIN] Generated', simulated.length, 'simulated contracts');
+                return simulated;
+              }
             }
             
-            throw new Error('Options data not available on paper account. Upgrade to live account for real options data, or stock-based simulation unavailable.');
+            throw new Error(`Alpaca options contracts 404 for ${symbol} (${expirationDate || 'any expiry'})`);
           } else if (response.status === 401 || response.status === 403) {
             throw new Error('Authentication failed. Please verify your Alpaca API keys in Settings.');
           } else if (response.status === 429) {
@@ -238,15 +251,27 @@ serve(async (req) => {
           feed: 'indicative' // Use indicative feed for options
         });
         
-        const url = `${baseUrl}/v1beta1/options/bars?${params.toString()}`;
-        console.log('[OPTIONS BARS] Request URL:', url);
+        let url = `${baseUrl}/v2/options/bars?${params.toString()}`;
+        console.log('[OPTIONS BARS] Request URL (v2):', url);
         
-        const response = await fetch(url, {
+        let response = await fetch(url, {
           headers: {
             'APCA-API-KEY-ID': alpacaKey.api_key,
             'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
           },
         });
+        
+        if (response.status === 404) {
+          // Fallback to legacy beta endpoint if v2 not available
+          url = `${baseUrl}/v1beta1/options/bars?${params.toString()}`;
+          console.warn('[OPTIONS BARS] v2 returned 404. Falling back to v1beta1:', url);
+          response = await fetch(url, {
+            headers: {
+              'APCA-API-KEY-ID': alpacaKey.api_key,
+              'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+            },
+          });
+        }
         
         console.log('[OPTIONS BARS] Response status:', response.status, response.statusText);
         

@@ -61,10 +61,14 @@ serve(async (req) => {
     const stocksWsUrl = 'wss://stream.data.alpaca.markets/v2/iex';
     const stocksSocket = new WebSocket(stocksWsUrl);
     
-    // Connect to Alpaca Options WebSocket (v1beta1/options)
+    // Connect to Alpaca Options WebSocket (v2/options)
     // Note: Paper accounts may have limited access to options streams
-    const optionsWsUrl = 'wss://stream.data.alpaca.markets/v1beta1/options';
+    const optionsWsUrl = 'wss://stream.data.alpaca.markets/v2/options';
     const optionsSocket = new WebSocket(optionsWsUrl);
+    
+    // Keepalive timers
+    let stocksPing: number | undefined;
+    let optionsPing: number | undefined;
     
     console.log('[WS STOCKS] Connecting to Alpaca stocks WebSocket...');
     console.log('[WS STOCKS] URL:', stocksWsUrl);
@@ -86,6 +90,15 @@ serve(async (req) => {
         secret: alpacaKey.api_secret
       };
       stocksSocket.send(JSON.stringify(authMsg));
+      // Start keepalive ping
+      try {
+        stocksPing = setInterval(() => {
+          if (stocksSocket.readyState === WebSocket.OPEN) {
+            stocksSocket.send(JSON.stringify({ action: 'ping' }));
+          }
+        }, 20000) as unknown as number;
+      } catch (_) {}
+
     };
 
     stocksSocket.onmessage = (event) => {
@@ -115,6 +128,10 @@ serve(async (req) => {
 
     stocksSocket.onclose = (event) => {
       console.log('[WS STOCKS] Closed:', event.code, event.reason);
+      if (stocksPing) {
+        try { clearInterval(stocksPing); } catch (_) {}
+        stocksPing = undefined;
+      }
       socket.send(JSON.stringify({ type: 'disconnected', stream: 'stocks' }));
     };
 
@@ -129,6 +146,15 @@ serve(async (req) => {
       };
       optionsSocket.send(JSON.stringify(authMsg));
       console.log('[WS OPTIONS] Auth message sent');
+      // Start keepalive ping
+      try {
+        optionsPing = setInterval(() => {
+          if (optionsSocket.readyState === WebSocket.OPEN) {
+            optionsSocket.send(JSON.stringify({ action: 'ping' }));
+          }
+        }, 20000) as unknown as number;
+      } catch (_) {}
+
     };
 
     optionsSocket.onmessage = (event) => {
