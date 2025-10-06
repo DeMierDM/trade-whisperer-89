@@ -27,6 +27,9 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
+  
+  // Max reconnect attempts before giving up
+  const MAX_RECONNECT_ATTEMPTS = 10;
 
   useEffect(() => {
     let mounted = true;
@@ -196,9 +199,21 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
           if (mounted) {
             setConnected(false);
             
+            // Check if we've exceeded max reconnect attempts
+            if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+              console.error('[WS CLIENT] ✗ Max reconnection attempts reached. Stopping reconnection.');
+              setLastError('WebSocket connection failed after multiple attempts. Please check your API keys and try refreshing the page.');
+              toast({
+                title: 'Connection Failed',
+                description: 'Unable to establish WebSocket connection. Please refresh the page or check your API keys in Settings.',
+                variant: 'destructive',
+              });
+              return;
+            }
+            
             // Exponential backoff for reconnection
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-            console.log(`[WS CLIENT] Reconnecting in ${delay}ms...`);
+            console.log(`[WS CLIENT] Reconnecting in ${delay}ms... (Attempt ${reconnectAttempts + 1}/${MAX_RECONNECT_ATTEMPTS})`);
             
             setReconnectAttempts(prev => prev + 1);
             
@@ -218,6 +233,17 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
         setLastError(errorMsg);
         
         if (mounted) {
+          // Check if we've exceeded max reconnect attempts
+          if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+            console.error('[WS CLIENT] ✗ Max reconnection attempts reached. Stopping reconnection.');
+            toast({
+              title: 'Connection Failed',
+              description: 'Unable to establish WebSocket connection. Please refresh the page or check your API keys in Settings.',
+              variant: 'destructive',
+            });
+            return;
+          }
+          
           // Retry with backoff
           const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
           setReconnectAttempts(prev => prev + 1);

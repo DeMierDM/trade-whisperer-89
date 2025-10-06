@@ -7,6 +7,13 @@ const corsHeaders = {
 };
 
 serve(async (req) => {
+  // Log every request to help debug
+  console.log('[WS EDGE] Incoming request:', {
+    method: req.method,
+    url: req.url,
+    upgrade: req.headers.get("upgrade")
+  });
+
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -16,6 +23,7 @@ serve(async (req) => {
     const upgradeHeader = headers.get("upgrade") || "";
 
     if (upgradeHeader.toLowerCase() !== "websocket") {
+      console.error('[WS EDGE] ✗ Not a WebSocket request');
       return new Response("Expected WebSocket connection", { status: 400 });
     }
 
@@ -24,10 +32,12 @@ serve(async (req) => {
     const token = url.searchParams.get('token');
     
     if (!token) {
+      console.error('[WS EDGE] ✗ No token in query params');
       throw new Error('No authorization token found in query parameters');
     }
 
     const authHeader = `Bearer ${token}`;
+    console.log('[WS EDGE] ✓ Token found, creating Supabase client...');
 
     const supabaseClient = createClient(
       Deno.env.get('SUPABASE_URL') ?? '',
@@ -35,10 +45,21 @@ serve(async (req) => {
       { global: { headers: { Authorization: authHeader } } }
     );
 
+    console.log('[WS EDGE] ✓ Verifying user authentication...');
     const { data: { user }, error: userError } = await supabaseClient.auth.getUser();
-    if (userError || !user) {
-      throw new Error('Unauthorized');
+    
+    if (userError) {
+      console.error('[WS EDGE] ✗ User auth error:', userError);
+      throw new Error(`Unauthorized: ${userError.message}`);
     }
+    
+    if (!user) {
+      console.error('[WS EDGE] ✗ No user found');
+      throw new Error('Unauthorized: No user found');
+    }
+
+    console.log('[WS EDGE] ✓ User authenticated:', user.id.substring(0, 8) + '...');
+    console.log('[WS EDGE] Fetching API keys...');
 
     // Get API keys from database
     const { data: apiKeys, error: keysError } = await supabaseClient
@@ -46,13 +67,25 @@ serve(async (req) => {
       .select('*')
       .eq('user_id', user.id);
 
-    if (keysError) throw keysError;
+    if (keysError) {
+      console.error('[WS EDGE] ✗ API keys fetch error:', keysError);
+      throw new Error(`Failed to fetch API keys: ${keysError.message}`);
+    }
 
     const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca');
     
     if (!alpacaKey) {
-      throw new Error('Alpaca API key not configured');
+      console.error('[WS EDGE] ✗ No Alpaca API key configured for user');
+      throw new Error('Alpaca API key not configured. Please add your keys in Settings.');
     }
+
+    if (!alpacaKey.api_key || !alpacaKey.api_secret) {
+      console.error('[WS EDGE] ✗ Incomplete Alpaca credentials');
+      throw new Error('Incomplete Alpaca API credentials. Please update your keys in Settings.');
+    }
+
+    console.log('[WS EDGE] ✓ API keys loaded successfully');
+    console.log('[WS EDGE] ✓ Starting WebSocket upgrade...');
 
     const { socket, response } = Deno.upgradeWebSocket(req);
     

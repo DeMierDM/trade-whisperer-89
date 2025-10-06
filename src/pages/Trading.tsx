@@ -106,7 +106,11 @@ const Trading = () => {
       console.log('[OPTIONS CLIENT] Fetching options chain for', selectedSymbol);
       
       const { data, error } = await supabase.functions.invoke("fetch-market-data", {
-        body: { dataType: "options", symbol: selectedSymbol },
+        body: { 
+          dataType: "options", 
+          symbol: selectedSymbol,
+          allowSimulated: true // Enable simulated data for paper accounts
+        },
       });
 
       console.log('[OPTIONS CLIENT] Response:', { 
@@ -141,6 +145,18 @@ const Trading = () => {
 
       if (data?.data && Array.isArray(data.data)) {
         console.log('[OPTIONS CLIENT] ✓ Received', data.data.length, 'options contracts');
+        
+        if (data.data.length === 0) {
+          console.warn('[OPTIONS CLIENT] Empty options array - paper account or no options available');
+          setOptionsData([]);
+          toast({
+            title: 'No Options Available',
+            description: 'No options data available for this symbol. Paper accounts have limited options access.',
+            variant: 'default',
+          });
+          return;
+        }
+        
         console.log('[OPTIONS CLIENT] Sample contract:', JSON.stringify(data.data[0]).substring(0, 300));
         
         // Transform API data to match UI format
