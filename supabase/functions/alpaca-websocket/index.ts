@@ -57,10 +57,12 @@ serve(async (req) => {
     const { socket, response } = Deno.upgradeWebSocket(req);
     
     // Connect to Alpaca Stock WebSocket (v2/iex)
+    // Following Python's OptionDataStream pattern but adapted for WebSocket API
     const stocksWsUrl = 'wss://stream.data.alpaca.markets/v2/iex';
     const stocksSocket = new WebSocket(stocksWsUrl);
     
     // Connect to Alpaca Options WebSocket (v1beta1/options)
+    // Note: Paper accounts may have limited access to options streams
     const optionsWsUrl = 'wss://stream.data.alpaca.markets/v1beta1/options';
     const optionsSocket = new WebSocket(optionsWsUrl);
     
@@ -70,6 +72,10 @@ serve(async (req) => {
     console.log('[WS OPTIONS] URL:', optionsWsUrl);
     console.log('[WS] Mode:', alpacaKey.mode);
     console.log('[WS] API Key:', alpacaKey.api_key?.substring(0, 8) + '...');
+    
+    if (alpacaKey.mode === 'paper') {
+      console.warn('[WS] Paper account - options stream may have limited functionality');
+    }
 
     // Stocks WebSocket handlers
     stocksSocket.onopen = () => {
@@ -113,6 +119,7 @@ serve(async (req) => {
     };
 
     // Options WebSocket handlers
+    // Following Alpaca's WebSocket protocol for options (similar to Python's async pattern)
     optionsSocket.onopen = () => {
       console.log('[WS OPTIONS] Connected - sending auth');
       const authMsg = {
@@ -121,6 +128,7 @@ serve(async (req) => {
         secret: alpacaKey.api_secret
       };
       optionsSocket.send(JSON.stringify(authMsg));
+      console.log('[WS OPTIONS] Auth message sent');
     };
 
     optionsSocket.onmessage = (event) => {
@@ -128,14 +136,41 @@ serve(async (req) => {
         const data = JSON.parse(event.data);
         console.log('[WS OPTIONS] Received:', JSON.stringify(data).substring(0, 200));
         
-        if (data[0]?.T === 'success' && data[0]?.msg === 'authenticated') {
-          console.log('[WS OPTIONS] ✓ Authenticated');
-          socket.send(JSON.stringify({ type: 'connected', stream: 'options', message: 'Options stream connected' }));
-        } else if (data[0]?.T === 'error') {
-          console.error('[WS OPTIONS] ✗ Error:', data[0]?.msg);
-          socket.send(JSON.stringify({ type: 'error', stream: 'options', message: data[0]?.msg }));
+        // Handle Alpaca WebSocket message types
+        if (Array.isArray(data)) {
+          for (const msg of data) {
+            if (msg.T === 'success' && msg.msg === 'authenticated') {
+              console.log('[WS OPTIONS] ✓ Authenticated successfully');
+              socket.send(JSON.stringify({ 
+                type: 'connected', 
+                stream: 'options', 
+                message: 'Options stream authenticated',
+                paperAccount: alpacaKey.mode === 'paper'
+              }));
+            } else if (msg.T === 'error') {
+              console.error('[WS OPTIONS] ✗ Error:', msg.msg, msg.code);
+              // Check for paper account limitations
+              if (msg.msg?.includes('not found') || msg.msg?.includes('not available')) {
+                console.warn('[WS OPTIONS] Paper account limitation - options stream unavailable');
+                socket.send(JSON.stringify({ 
+                  type: 'error', 
+                  stream: 'options', 
+                  message: 'Options stream not available on paper account',
+                  code: 'PAPER_ACCOUNT_LIMITATION'
+                }));
+              } else {
+                socket.send(JSON.stringify({ type: 'error', stream: 'options', message: msg.msg }));
+              }
+            } else if (msg.T === 'subscription') {
+              console.log('[WS OPTIONS] Subscription confirmed:', msg);
+              socket.send(JSON.stringify({ type: 'subscribed', stream: 'options', data: msg }));
+            } else if (msg.T === 'q' || msg.T === 't') {
+              // Quote or Trade data - forward to client
+              socket.send(JSON.stringify({ stream: 'options', type: msg.T, data: msg }));
+            }
+          }
         } else {
-          // Tag and forward options data
+          // Non-array message format
           socket.send(JSON.stringify({ stream: 'options', data }));
         }
       } catch (error) {
@@ -154,6 +189,7 @@ serve(async (req) => {
     };
 
     // Handle messages from client (subscription requests)
+    // Following Alpaca's subscription protocol (matching Python's subscribe_quotes/subscribe_trades pattern)
     socket.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data);
@@ -163,18 +199,56 @@ serve(async (req) => {
         if (message.action === 'subscribe' || message.action === 'unsubscribe') {
           const stream = message.stream || 'stocks'; // default to stocks
           
+          // Prepare subscription message for Alpaca
+          const alpacaMessage: any = {
+            action: message.action
+          };
+          
           if (stream === 'stocks' || !message.stream) {
-            console.log('[WS CLIENT] Forwarding to stocks stream');
-            stocksSocket.send(JSON.stringify(message));
+            // Stock subscriptions (quotes, trades, bars)
+            if (message.quotes) alpacaMessage.quotes = message.quotes;
+            if (message.trades) alpacaMessage.trades = message.trades;
+            if (message.bars) alpacaMessage.bars = message.bars;
+            
+            console.log('[WS CLIENT] Forwarding to stocks stream:', alpacaMessage);
+            if (stocksSocket.readyState === WebSocket.OPEN) {
+              stocksSocket.send(JSON.stringify(alpacaMessage));
+            } else {
+              console.warn('[WS CLIENT] Stocks socket not ready:', stocksSocket.readyState);
+            }
           }
           
           if (stream === 'options' || message.optionSymbols) {
-            console.log('[WS CLIENT] Forwarding to options stream');
-            optionsSocket.send(JSON.stringify(message));
+            // Options subscriptions (quotes, trades)
+            const optionsMessage: any = {
+              action: message.action
+            };
+            
+            if (message.optionSymbols) optionsMessage.quotes = message.optionSymbols;
+            if (message.quotes) optionsMessage.quotes = message.quotes;
+            if (message.trades) optionsMessage.trades = message.trades;
+            
+            console.log('[WS CLIENT] Forwarding to options stream:', optionsMessage);
+            if (optionsSocket.readyState === WebSocket.OPEN) {
+              optionsSocket.send(JSON.stringify(optionsMessage));
+            } else {
+              console.warn('[WS CLIENT] Options socket not ready:', optionsSocket.readyState);
+              if (alpacaKey.mode === 'paper') {
+                socket.send(JSON.stringify({
+                  type: 'warning',
+                  stream: 'options',
+                  message: 'Options WebSocket not available on paper account'
+                }));
+              }
+            }
           }
         }
       } catch (error) {
         console.error('[WS CLIENT] Error processing message:', error);
+        socket.send(JSON.stringify({
+          type: 'error',
+          message: 'Failed to process subscription request'
+        }));
       }
     };
 

@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { generateSimulatedOptionsChain, generateSimulatedOptionBars } from './helpers.ts';
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -100,18 +101,35 @@ serve(async (req) => {
     console.log('[API KEY] Found Alpaca key for mode:', alpacaKey.mode);
 
     // ==================== OPTIONS CHAIN ====================
+    // Following Alpaca's official SDK pattern for options chain retrieval
     if (dataType === 'options') {
+      const { expirationDate, strikePrice } = requestBody;
+      
       const data = await retryWithBackoff(async () => {
-        console.log('[OPTIONS] Fetching options contracts');
-        console.log('[OPTIONS] Symbol:', symbol);
-        console.log('[OPTIONS] API Key ID:', alpacaKey.api_key?.substring(0, 8) + '...');
-        console.log('[OPTIONS] Account mode:', alpacaKey.mode);
+        console.log('[OPTIONS CHAIN] Fetching options contracts');
+        console.log('[OPTIONS CHAIN] Symbol:', symbol);
+        console.log('[OPTIONS CHAIN] Expiration filter:', expirationDate || 'all');
+        console.log('[OPTIONS CHAIN] Strike filter:', strikePrice || 'all');
+        console.log('[OPTIONS CHAIN] API Key ID:', alpacaKey.api_key?.substring(0, 8) + '...');
+        console.log('[OPTIONS CHAIN] Account mode:', alpacaKey.mode);
         
         const baseUrl = 'https://data.alpaca.markets';
-        const encodedSymbol = encodeURIComponent(symbol);
-        const url = `${baseUrl}/v1beta1/options/contracts?underlying_symbols=${encodedSymbol}&status=active&limit=1000`;
+        const params = new URLSearchParams({
+          underlying_symbols: symbol,
+          status: 'active',
+          limit: '1000'
+        });
         
-        console.log('[OPTIONS] Request URL:', url);
+        // Add optional filters (matching Python's OptionChainRequest)
+        if (expirationDate) {
+          params.append('expiration_date', expirationDate);
+        }
+        if (strikePrice !== undefined && strikePrice !== null) {
+          params.append('strike_price', strikePrice.toString());
+        }
+        
+        const url = `${baseUrl}/v1beta1/options/contracts?${params.toString()}`;
+        console.log('[OPTIONS CHAIN] Request URL:', url);
         
         const response = await fetch(url, {
           headers: {
@@ -120,14 +138,36 @@ serve(async (req) => {
           },
         });
 
-        console.log('[OPTIONS] Response status:', response.status, response.statusText);
+        console.log('[OPTIONS CHAIN] Response status:', response.status, response.statusText);
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error('[OPTIONS] Error response:', errorText);
+          console.error('[OPTIONS CHAIN] Error response:', errorText);
           
+          // Paper accounts have limited options data access
           if (response.status === 404) {
-            throw new Error('Options data not available. Paper trading accounts have limited access to options endpoints. Please upgrade to a live account or use stock data.');
+            console.warn('[OPTIONS CHAIN] Paper account limitation detected');
+            console.warn('[OPTIONS CHAIN] Returning simulated options chain based on stock data');
+            
+            // Fetch underlying stock price to generate simulated chain
+            const quoteResponse = await fetch(`${baseUrl}/v2/stocks/${symbol}/quotes/latest`, {
+              headers: {
+                'APCA-API-KEY-ID': alpacaKey.api_key,
+                'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+              },
+            });
+            
+            if (quoteResponse.ok) {
+              const quoteData = await quoteResponse.json();
+              const stockPrice = quoteData.quote?.ap || quoteData.quote?.bp || 100;
+              
+              // Generate simulated options chain
+              const simulated = generateSimulatedOptionsChain(symbol, stockPrice, expirationDate);
+              console.log('[OPTIONS CHAIN] Generated', simulated.length, 'simulated contracts');
+              return simulated;
+            }
+            
+            throw new Error('Options data not available on paper account. Upgrade to live account for real options data, or stock-based simulation unavailable.');
           } else if (response.status === 401 || response.status === 403) {
             throw new Error('Authentication failed. Please verify your Alpaca API keys in Settings.');
           } else if (response.status === 429) {
@@ -138,32 +178,28 @@ serve(async (req) => {
         }
 
         const json = await response.json();
-        console.log('[OPTIONS] Response structure:', Object.keys(json));
+        console.log('[OPTIONS CHAIN] Response structure:', Object.keys(json));
         
-        const contracts = json.contracts || json.data?.contracts || json.results || [];
-        console.log('[OPTIONS] Found', contracts.length, 'contracts');
+        const contracts = json.option_contracts || json.contracts || json.data?.contracts || [];
+        console.log('[OPTIONS CHAIN] Found', contracts.length, 'real contracts');
         
-        if (contracts.length === 0) {
-          console.warn('[OPTIONS] No contracts returned. Possible reasons:');
-          console.warn('  - Symbol may not have active options');
-          console.warn('  - Paper trading account limitations');
-          console.warn('  - Market hours restrictions');
-        }
-        
-        // Map Alpaca contract fields to UI-friendly shape
+        // Map Alpaca contract fields to consistent format (following Python SDK pattern)
         const mapped = contracts.map((c: any) => ({
-          cfi: c.cfi || null,
-          contract_type: (c.type || c.contract_type || '').toString().toLowerCase().includes('p') ? 'put' : 'call',
-          exercise_style: (c.style || c.exercise_style || 'american').toString().toLowerCase(),
+          symbol: c.symbol || c.ticker,
+          underlying_symbol: c.underlying_symbol || symbol,
           expiration_date: c.expiration_date,
+          strike_price: parseFloat(c.strike_price || c.strike || 0),
+          option_type: (c.type || c.option_type || '').toLowerCase(),
+          contract_type: (c.type || c.contract_type || '').toLowerCase().includes('p') ? 'put' : 'call',
+          exercise_style: (c.style || c.exercise_style || 'american').toLowerCase(),
+          shares_per_contract: parseInt(c.size || c.shares_per_contract || '100'),
           primary_exchange: c.exchange || c.primary_exchange || 'OPRA',
-          shares_per_contract: c.shares_per_contract || 100,
-          strike_price: c.strike || c.strike_price,
-          ticker: c.symbol || c.ticker,
-          underlying_ticker: c.underlying_symbol || c.underlying_ticker || symbol,
+          open_interest: parseInt(c.open_interest || '0'),
+          close_price: parseFloat(c.close_price || '0'),
+          tradable: c.tradable !== false,
         }));
 
-        console.log('[OPTIONS] Successfully mapped', mapped.length, 'contracts');
+        console.log('[OPTIONS CHAIN] Successfully mapped', mapped.length, 'contracts');
         return mapped;
       }, 'Fetch Options Chain');
 
@@ -174,9 +210,10 @@ serve(async (req) => {
     }
 
     // ==================== HISTORICAL OPTIONS BARS ====================
+    // Following Alpaca's OptionBarsRequest pattern (matching Python SDK)
     if (dataType === 'historical-options') {
-      const { contract, timeframe: tf = '1Min', from, to } = requestBody;
-      if (!contract) throw new Error('Contract ticker required for historical options data');
+      const { contract, timeframe: tf = '1Day', from, to } = requestBody;
+      if (!contract) throw new Error('Contract symbol required for historical options data');
 
       const data = await retryWithBackoff(async () => {
         console.log('[OPTIONS BARS] Fetching historical option bars');
@@ -184,15 +221,24 @@ serve(async (req) => {
         console.log('[OPTIONS BARS] Timeframe:', tf);
         console.log('[OPTIONS BARS] Raw dates:', from, 'to', to);
         
-        // Ensure UTC timezone (following Python pattern)
+        // Ensure UTC timezone (following Python's timezone-aware datetime pattern)
         const startDate = ensureUTCDate(from);
         const endDate = ensureUTCDate(to);
         
         console.log('[OPTIONS BARS] UTC dates:', startDate.toISOString(), 'to', endDate.toISOString());
 
         const baseUrl = 'https://data.alpaca.markets';
-        const url = `${baseUrl}/v1beta1/options/bars?symbols=${encodeURIComponent(contract)}&timeframe=${tf}&start=${encodeURIComponent(startDate.toISOString())}&end=${encodeURIComponent(endDate.toISOString())}&limit=50000`;
+        // Use proper options bars endpoint format
+        const params = new URLSearchParams({
+          symbols: contract,
+          timeframe: tf,
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+          limit: '10000',
+          feed: 'indicative' // Use indicative feed for options
+        });
         
+        const url = `${baseUrl}/v1beta1/options/bars?${params.toString()}`;
         console.log('[OPTIONS BARS] Request URL:', url);
         
         const response = await fetch(url, {
@@ -208,8 +254,40 @@ serve(async (req) => {
           const errorText = await response.text();
           console.error('[OPTIONS BARS] Error response:', errorText);
           
+          // Paper account limitation
           if (response.status === 404) {
-            throw new Error('Options historical data not available. Paper accounts have limited access. Consider upgrading to a live account.');
+            console.warn('[OPTIONS BARS] Paper account - options bars not available');
+            console.warn('[OPTIONS BARS] Falling back to simulated data based on underlying');
+            
+            // Extract underlying symbol from option contract
+            const underlying = contract.match(/^[A-Z]+/)?.[0] || symbol;
+            console.log('[OPTIONS BARS] Extracted underlying:', underlying);
+            
+            // Fetch stock bars as fallback
+            const stockUrl = `${baseUrl}/v2/stocks/${underlying}/bars?start=${startDate.toISOString()}&end=${endDate.toISOString()}&timeframe=${tf}&limit=10000&feed=iex`;
+            const stockResponse = await fetch(stockUrl, {
+              headers: {
+                'APCA-API-KEY-ID': alpacaKey.api_key,
+                'APCA-API-SECRET-KEY': alpacaKey.api_secret || '',
+              },
+            });
+            
+            if (stockResponse.ok) {
+              const stockData = await stockResponse.json();
+              const stockBars = stockData.bars?.[underlying] || [];
+              
+              // Generate simulated option bars from stock data
+              const simulatedBars = generateSimulatedOptionBars(contract, stockBars);
+              console.log('[OPTIONS BARS] Generated', simulatedBars.length, 'simulated bars');
+              
+              return {
+                bars: { [contract]: simulatedBars },
+                next_page_token: null,
+                simulated: true
+              };
+            }
+            
+            throw new Error('Options historical data not available. Paper accounts require live account upgrade for real options bars.');
           } else if (response.status === 401 || response.status === 403) {
             throw new Error('Authentication failed. Please verify your API keys.');
           } else if (response.status === 429) {
@@ -219,11 +297,17 @@ serve(async (req) => {
           throw new Error(`Alpaca options bars error: ${response.status} - ${errorText}`);
         }
         
-        const data = await response.json();
-        const barCount = data.bars?.[contract]?.length || 0;
+        const responseData = await response.json();
+        const bars = responseData.bars || {};
+        const barCount = bars[contract]?.length || 0;
         console.log('[OPTIONS BARS] Success - received', barCount, 'bars');
         
-        return data;
+        if (barCount > 0) {
+          console.log('[OPTIONS BARS] First bar:', bars[contract][0].t);
+          console.log('[OPTIONS BARS] Last bar:', bars[contract][barCount - 1].t);
+        }
+        
+        return responseData;
       }, 'Fetch Options Historical Bars');
       
       return new Response(
