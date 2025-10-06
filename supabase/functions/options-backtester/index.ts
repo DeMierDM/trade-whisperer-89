@@ -95,40 +95,16 @@ Deno.serve(async (req) => {
       throw new Error('Missing Alpaca API keys');
     }
 
-    // Fetch historical underlying data from Alpaca Data API
-    // Note: Use data.alpaca.markets for historical data, not trading API
-    const alpacaDataUrl = 'https://data.alpaca.markets';
-    
-    // Format dates as RFC3339 for Alpaca API
-    const startDateTime = `${config.startDate}T09:30:00Z`;
-    const endDateTime = `${config.endDate}T16:00:00Z`;
-    
-    console.log(`Fetching bars for ${config.symbol} from ${startDateTime} to ${endDateTime}`);
-    
-    const underlyingResponse = await fetch(
-      `${alpacaDataUrl}/v2/stocks/${config.symbol}/bars?timeframe=${config.timeframe}&start=${startDateTime}&end=${endDateTime}&limit=10000`,
-      {
-        headers: {
-          'APCA-API-KEY-ID': alpacaKey,
-          'APCA-API-SECRET-KEY': alpacaSecret,
-        },
-      }
+    // Fetch historical underlying data with retry logic
+    const bars = await fetchHistoricalDataWithRetry(
+      config.symbol,
+      config.startDate,
+      config.endDate,
+      config.timeframe,
+      alpacaKey,
+      alpacaSecret
     );
-
-    if (!underlyingResponse.ok) {
-      const errorText = await underlyingResponse.text();
-      console.error('Alpaca API error:', errorText);
-      throw new Error(`Failed to fetch underlying data: ${underlyingResponse.status} - ${errorText}`);
-    }
-
-    const underlyingData = await underlyingResponse.json();
     
-    if (!underlyingData.bars || !underlyingData.bars[config.symbol]) {
-      console.error('No bars returned:', underlyingData);
-      throw new Error(`No bar data available for ${config.symbol}`);
-    }
-    
-    const bars = underlyingData.bars[config.symbol];
     console.log(`Fetched ${bars.length} bars for ${config.symbol}`);
 
     // Fetch strategy parameters
@@ -280,33 +256,123 @@ Deno.serve(async (req) => {
   }
 });
 
+// Helper function to fetch historical data with retry logic
+async function fetchHistoricalDataWithRetry(
+  symbol: string,
+  startDate: string,
+  endDate: string,
+  timeframe: string,
+  apiKey: string,
+  apiSecret: string,
+  maxRetries = 3
+): Promise<any[]> {
+  const alpacaDataUrl = 'https://data.alpaca.markets';
+  const startDateTime = `${startDate}T09:30:00Z`;
+  const endDateTime = `${endDate}T16:00:00Z`;
+  
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      console.log(`Fetching bars for ${symbol} (attempt ${attempt + 1}/${maxRetries})`);
+      
+      const response = await fetch(
+        `${alpacaDataUrl}/v2/stocks/${symbol}/bars?timeframe=${timeframe}&start=${startDateTime}&end=${endDateTime}&limit=10000&adjustment=all`,
+        {
+          headers: {
+            'APCA-API-KEY-ID': apiKey,
+            'APCA-API-SECRET-KEY': apiSecret,
+          },
+        }
+      );
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        
+        // Don't retry on auth errors
+        if (response.status === 401 || response.status === 403) {
+          throw new Error(`Authentication failed: ${errorText}`);
+        }
+        
+        // Retry on rate limits and server errors
+        if (response.status === 429 || response.status >= 500) {
+          if (attempt < maxRetries - 1) {
+            const delay = Math.pow(2, attempt) * 1000;
+            console.log(`Rate limited or server error, retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            continue;
+          }
+        }
+        
+        throw new Error(`Failed to fetch data: ${response.status} - ${errorText}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.bars || !data.bars[symbol]) {
+        throw new Error(`No bar data available for ${symbol}`);
+      }
+      
+      return data.bars[symbol];
+      
+    } catch (error) {
+      if (attempt === maxRetries - 1) {
+        throw error;
+      }
+      console.error(`Attempt ${attempt + 1} failed:`, error);
+      await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+    }
+  }
+  
+  throw new Error('Failed to fetch historical data after all retries');
+}
+
 function executeStrategy(strategy: string, bar: any, params: any, index: number, bars: any[]): 'BUY' | 'SELL' | 'HOLD' {
-  // Simplified strategy logic - implement full strategies later
   if (strategy === 'HAVWAP-Rev-v2') {
-    // Mean reversion based on VWAP
-    if (index < 21) return 'HOLD';
-    const ema = calculateEMA(bars.slice(Math.max(0, index - 21), index), params?.ema_length || 21);
+    // Mean reversion based on EMA with configurable parameters
+    const emaLength = params?.ema_length || 21;
+    if (index < emaLength) return 'HOLD';
+    
+    const ema = calculateEMA(bars.slice(Math.max(0, index - emaLength), index), emaLength);
     const deviation = ((bar.c - ema) / ema) * 100;
     
+    // Entry on oversold, exit on return to mean
     if (deviation < -(params?.entry_deviation_pct || 0.18)) return 'BUY';
     if (deviation > (params?.near_deviation_pct || 0.06)) return 'SELL';
+    
   } else if (strategy === 'Delta-Bucket-Trend') {
-    // Simple trend following
-    if (index < 10) return 'HOLD';
-    const sma10 = bars.slice(index - 10, index).reduce((sum: number, b: any) => sum + b.c, 0) / 10;
-    if (bar.c > sma10 * 1.02) return 'BUY';
-    if (bar.c < sma10 * 0.98) return 'SELL';
+    // Trend following with SMA crossover
+    const shortPeriod = params?.short_period || 10;
+    const longPeriod = params?.long_period || 20;
+    
+    if (index < longPeriod) return 'HOLD';
+    
+    const shortSMA = calculateSMA(bars.slice(index - shortPeriod, index));
+    const longSMA = calculateSMA(bars.slice(index - longPeriod, index));
+    const prevShortSMA = calculateSMA(bars.slice(index - shortPeriod - 1, index - 1));
+    const prevLongSMA = calculateSMA(bars.slice(index - longPeriod - 1, index - 1));
+    
+    // Bullish crossover
+    if (shortSMA > longSMA && prevShortSMA <= prevLongSMA) return 'BUY';
+    // Bearish crossover
+    if (shortSMA < longSMA && prevShortSMA >= prevLongSMA) return 'SELL';
+    
   } else if (strategy === 'ATM-Scalp-v1') {
-    // Scalping based on momentum
-    if (index < 5) return 'HOLD';
+    // Momentum scalping with RSI
+    const rsiPeriod = params?.rsi_period || 14;
+    if (index < rsiPeriod) return 'HOLD';
+    
+    const rsi = calculateRSI(bars.slice(index - rsiPeriod, index + 1));
     const momentum = bar.c - bars[index - 5].c;
-    if (momentum > 0) return 'BUY';
-    if (momentum < 0) return 'SELL';
+    
+    // Buy on oversold with positive momentum
+    if (rsi < 30 && momentum > 0) return 'BUY';
+    // Sell on overbought with negative momentum
+    if (rsi > 70 && momentum < 0) return 'SELL';
   }
   
   return 'HOLD';
 }
 
+// Technical indicator calculations
 function calculateEMA(bars: any[], period: number): number {
   if (bars.length === 0) return 0;
   const multiplier = 2 / (period + 1);
@@ -315,4 +381,40 @@ function calculateEMA(bars: any[], period: number): number {
     ema = (bars[i].c - ema) * multiplier + ema;
   }
   return ema;
+}
+
+function calculateSMA(bars: any[]): number {
+  if (bars.length === 0) return 0;
+  return bars.reduce((sum: number, bar: any) => sum + bar.c, 0) / bars.length;
+}
+
+function calculateRSI(bars: any[], period = 14): number {
+  if (bars.length < period + 1) return 50;
+  
+  let gains = 0;
+  let losses = 0;
+  
+  // Calculate initial average gain/loss
+  for (let i = 1; i <= period; i++) {
+    const change = bars[i].c - bars[i - 1].c;
+    if (change > 0) gains += change;
+    else losses += Math.abs(change);
+  }
+  
+  let avgGain = gains / period;
+  let avgLoss = losses / period;
+  
+  // Calculate RSI using Wilder's smoothing
+  for (let i = period + 1; i < bars.length; i++) {
+    const change = bars[i].c - bars[i - 1].c;
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? Math.abs(change) : 0;
+    
+    avgGain = (avgGain * (period - 1) + gain) / period;
+    avgLoss = (avgLoss * (period - 1) + loss) / period;
+  }
+  
+  if (avgLoss === 0) return 100;
+  const rs = avgGain / avgLoss;
+  return 100 - (100 / (1 + rs));
 }
