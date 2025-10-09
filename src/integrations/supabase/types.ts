@@ -21,6 +21,7 @@ export type Database = {
           created_at: string | null
           id: string
           is_connected: boolean | null
+          is_encrypted: boolean | null
           last_tested_at: string | null
           mode: Database["public"]["Enums"]["trading_mode"] | null
           provider: Database["public"]["Enums"]["api_provider"]
@@ -33,6 +34,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_connected?: boolean | null
+          is_encrypted?: boolean | null
           last_tested_at?: string | null
           mode?: Database["public"]["Enums"]["trading_mode"] | null
           provider: Database["public"]["Enums"]["api_provider"]
@@ -45,6 +47,7 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_connected?: boolean | null
+          is_encrypted?: boolean | null
           last_tested_at?: string | null
           mode?: Database["public"]["Enums"]["trading_mode"] | null
           provider?: Database["public"]["Enums"]["api_provider"]
@@ -345,10 +348,70 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      api_keys_safe: {
+        Row: {
+          api_key_masked: string | null
+          api_secret_masked: string | null
+          created_at: string | null
+          id: string | null
+          is_connected: boolean | null
+          is_encrypted: boolean | null
+          last_tested_at: string | null
+          mode: Database["public"]["Enums"]["trading_mode"] | null
+          provider: Database["public"]["Enums"]["api_provider"] | null
+          updated_at: string | null
+          user_id: string | null
+        }
+        Insert: {
+          api_key_masked?: never
+          api_secret_masked?: never
+          created_at?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          is_encrypted?: boolean | null
+          last_tested_at?: string | null
+          mode?: Database["public"]["Enums"]["trading_mode"] | null
+          provider?: Database["public"]["Enums"]["api_provider"] | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          api_key_masked?: never
+          api_secret_masked?: never
+          created_at?: string | null
+          id?: string | null
+          is_connected?: boolean | null
+          is_encrypted?: boolean | null
+          last_tested_at?: string | null
+          mode?: Database["public"]["Enums"]["trading_mode"] | null
+          provider?: Database["public"]["Enums"]["api_provider"] | null
+          updated_at?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
     }
     Functions: {
-      [_ in never]: never
+      decrypt_secret: {
+        Args: { encrypted_secret: string }
+        Returns: string
+      }
+      encrypt_secret: {
+        Args: { secret: string }
+        Returns: string
+      }
+      get_user_api_keys: {
+        Args: { p_provider?: string; p_user_id: string }
+        Returns: {
+          api_key: string
+          api_secret: string
+          id: string
+          is_connected: boolean
+          last_tested_at: string
+          mode: string
+          provider: string
+        }[]
+      }
     }
     Enums: {
       api_provider: "alpaca" | "openai"

@@ -58,16 +58,33 @@ serve(async (req) => {
       }
     }
 
-    // Update the connection status in the database
-    const { error: updateError } = await supabaseClient
+    // Use service role client to encrypt and store API keys
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    // Encrypt the API secret before storing
+    const { data: encryptedSecret, error: encryptError } = apiSecret 
+      ? await supabaseAdmin.rpc('encrypt_secret', { secret: apiSecret })
+      : { data: null, error: null };
+
+    if (encryptError) {
+      console.error('Error encrypting secret:', encryptError);
+      throw encryptError;
+    }
+
+    // Update the connection status in the database with encrypted secret
+    const { error: updateError } = await supabaseAdmin
       .from('api_keys')
       .upsert({
         user_id: user.id,
         provider,
         api_key: apiKey,
-        api_secret: apiSecret,
+        api_secret: encryptedSecret,
         mode,
         is_connected: isConnected,
+        is_encrypted: apiSecret ? true : false,
         last_tested_at: new Date().toISOString(),
       }, {
         onConflict: 'user_id,provider'

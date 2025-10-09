@@ -61,18 +61,25 @@ serve(async (req) => {
     console.log('[WS EDGE] ✓ User authenticated:', user.id.substring(0, 8) + '...');
     console.log('[WS EDGE] Fetching API keys...');
 
-    // Get API keys from database
-    const { data: apiKeys, error: keysError } = await supabaseClient
-      .from('api_keys')
-      .select('*')
-      .eq('user_id', user.id);
+    // Use service role client to access encrypted API keys
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
+
+    // Get decrypted API keys using secure function
+    const { data: apiKeys, error: keysError } = await supabaseAdmin
+      .rpc('get_user_api_keys', { 
+        p_user_id: user.id,
+        p_provider: 'alpaca'
+      });
 
     if (keysError) {
       console.error('[WS EDGE] ✗ API keys fetch error:', keysError);
       throw new Error(`Failed to fetch API keys: ${keysError.message}`);
     }
 
-    const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca');
+    const alpacaKey = apiKeys?.[0];
     
     if (!alpacaKey) {
       console.error('[WS EDGE] ✗ No Alpaca API key configured for user');

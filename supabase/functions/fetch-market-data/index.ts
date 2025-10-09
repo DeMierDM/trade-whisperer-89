@@ -84,15 +84,25 @@ serve(async (req) => {
     console.log('[REQUEST] Data Type:', dataType);
     console.log('[REQUEST] Symbol:', symbol);
 
-    // Get API keys from database
-    const { data: apiKeys, error: keysError } = await supabaseClient
-      .from('api_keys')
-      .select('*')
-      .eq('user_id', user.id);
+    // Use service role client to access encrypted API keys
+    const supabaseAdmin = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
+    );
 
-    if (keysError) throw keysError;
+    // Get decrypted API keys using secure function
+    const { data: apiKeys, error: keysError } = await supabaseAdmin
+      .rpc('get_user_api_keys', { 
+        p_user_id: user.id,
+        p_provider: 'alpaca'
+      });
 
-    const alpacaKey = apiKeys?.find(k => k.provider === 'alpaca');
+    if (keysError) {
+      console.error('Error fetching API keys:', keysError);
+      throw keysError;
+    }
+
+    const alpacaKey = apiKeys?.[0];
 
     if (!alpacaKey) {
       throw new Error('No Alpaca API keys found. Please add your keys in Settings.');

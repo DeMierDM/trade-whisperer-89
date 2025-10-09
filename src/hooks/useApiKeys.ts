@@ -5,11 +5,12 @@ import { useToast } from '@/hooks/use-toast';
 export interface ApiKey {
   id: string;
   provider: 'alpaca' | 'openai';
-  api_key: string;
-  api_secret?: string;
+  api_key_masked: string; // Only masked version visible to client
+  api_secret_masked?: string; // Only masked version visible to client
   mode?: 'paper' | 'live';
   is_connected: boolean;
   last_tested_at?: string;
+  is_encrypted: boolean;
 }
 
 export const useApiKeys = () => {
@@ -19,8 +20,9 @@ export const useApiKeys = () => {
 
   const fetchApiKeys = async () => {
     try {
+      // Use the safe view that only exposes masked keys
       const { data, error } = await supabase
-        .from('api_keys')
+        .from('api_keys_safe')
         .select('*')
         .order('created_at', { ascending: false });
 
