@@ -9,9 +9,10 @@ import { CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
 import { useApiKeys } from "@/hooks/useApiKeys";
 import { useRiskControls } from "@/hooks/useRiskControls";
 import { useStrategyDefaults } from "@/hooks/useStrategyDefaults";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ApiDiagnostics } from "@/components/ApiDiagnostics";
+
+const DOCKER_API_URL = 'http://localhost:3001/api';
 
 const Settings = () => {
   const { toast } = useToast();
@@ -94,44 +95,31 @@ const Settings = () => {
   const handleSaveApiKey = async () => {
     try {
       console.log(`Saving alpaca API key...`);
-      
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError) {
-        console.error('Auth error:', userError);
-        throw userError;
-      }
-      
-      if (!user) {
-        throw new Error("Not authenticated");
-      }
 
       const keyData = {
-        user_id: user.id,
         provider: 'alpaca' as const,
         api_key: alpacaKey.trim(),
         api_secret: alpacaSecret.trim(),
         mode: alpacaMode,
       };
 
-      console.log('Upserting API key for provider: alpaca');
+      console.log('Saving API key for provider: alpaca');
 
-      const { error } = await supabase
-        .from("api_keys")
-        .upsert([keyData], {
-          onConflict: 'user_id,provider'
-        });
+      const response = await fetch(`${DOCKER_API_URL}/config/api-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(keyData),
+      });
 
-      if (error) {
-        console.error('Upsert error:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       console.log(`alpaca API key saved successfully`);
-      
+
       // Refetch to update connection status in UI
       await refetchApiKeys();
-      
+
       toast({
         title: "API key saved",
         description: `Your alpaca API key has been saved successfully`,

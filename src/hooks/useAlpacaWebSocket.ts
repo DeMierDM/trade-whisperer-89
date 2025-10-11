@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 interface Quote {
@@ -18,6 +17,9 @@ interface Trade {
   timestamp: string;
 }
 
+// WebSocket connects directly to Docker API server
+const DOCKER_WS_URL = 'ws://localhost:3001/ws';
+
 export const useAlpacaWebSocket = (symbols: string[] = []) => {
   const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
   const [trades, setTrades] = useState<Trade[]>([]);
@@ -27,7 +29,7 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { toast } = useToast();
-  
+
   // Max reconnect attempts before giving up
   const MAX_RECONNECT_ATTEMPTS = 10;
 
@@ -38,31 +40,11 @@ export const useAlpacaWebSocket = (symbols: string[] = []) => {
       try {
         console.log('[WS CLIENT] Starting WebSocket connection process...');
         console.log('[WS CLIENT] Reconnect attempt:', reconnectAttempts);
-        
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) {
-          const errorMsg = 'No session found - please log in';
-          console.log('[WS CLIENT] ✗', errorMsg);
-          setLastError(errorMsg);
-          toast({
-            title: 'Authentication Required',
-            description: 'Please log in to access live market data',
-            variant: 'destructive',
-          });
-          return;
-        }
-
-        console.log('[WS CLIENT] ✓ Session found, connecting to WebSocket proxy...');
-        console.log('[WS CLIENT] User ID:', session.user.id);
-        console.log('[WS CLIENT] Token expires at:', new Date(session.expires_at! * 1000).toISOString());
-
-        // Get Supabase project URL from environment
-        const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://uroueekwllvjcueyrmrg.supabase.co';
-        const wsUrl = `${supabaseUrl.replace('https://', 'wss://')}/functions/v1/alpaca-websocket?token=${encodeURIComponent(session.access_token)}`;
-        console.log('[WS CLIENT] WebSocket URL:', wsUrl.replace(session.access_token, 'TOKEN'));
+        console.log('[WS CLIENT] Connecting to Docker WebSocket proxy...');
+        console.log('[WS CLIENT] WebSocket URL:', DOCKER_WS_URL);
         console.log('[WS CLIENT] Initiating connection...');
 
-        const ws = new WebSocket(wsUrl);
+        const ws = new WebSocket(DOCKER_WS_URL);
 
         ws.onopen = () => {
           console.log('[WS CLIENT] ✓ WebSocket connection opened successfully');

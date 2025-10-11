@@ -3,7 +3,8 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
+
+const DOCKER_API_URL = 'http://localhost:3001/api';
 
 interface DiagnosticResult {
   name: string;
@@ -29,14 +30,17 @@ export const ApiDiagnostics = () => {
 
     // Test 1: Account
     try {
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'account' }
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'account' })
       });
+      const data = await response.json();
       tests[0] = {
         ...tests[0],
-        status: error ? 'error' : 'success',
-        message: error ? error.message : 'Connected',
-        details: data?.account ? `Balance: $${data.account.equity}` : undefined
+        status: !response.ok || data.error ? 'error' : 'success',
+        message: data.error || 'Connected',
+        details: data?.data?.account ? `Balance: $${data.data.account.equity}` : undefined
       };
     } catch (err: any) {
       tests[0] = { ...tests[0], status: 'error', message: err.message };
@@ -45,14 +49,17 @@ export const ApiDiagnostics = () => {
 
     // Test 2: Quote
     try {
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'quote', symbol: 'SPY' }
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'quote', symbol: 'SPY' })
       });
+      const data = await response.json();
       tests[1] = {
         ...tests[1],
-        status: error ? 'error' : 'success',
-        message: error ? error.message : 'Success',
-        details: data?.quote ? `Bid: $${data.quote.bid}, Ask: $${data.quote.ask}` : undefined
+        status: !response.ok || data.error ? 'error' : 'success',
+        message: data.error || 'Success',
+        details: data?.data?.quote ? `Bid: $${data.data.quote.bp}, Ask: $${data.data.quote.ap}` : undefined
       };
     } catch (err: any) {
       tests[1] = { ...tests[1], status: 'error', message: err.message };
@@ -61,19 +68,22 @@ export const ApiDiagnostics = () => {
 
     // Test 3: Bars
     try {
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { 
-          dataType: 'bars', 
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataType: 'bars',
           symbol: 'SPY',
           timeframe: '1Min',
           limit: 10
-        }
+        })
       });
+      const data = await response.json();
       tests[2] = {
         ...tests[2],
-        status: error ? 'error' : 'success',
-        message: error ? error.message : 'Success',
-        details: data?.bars ? `Retrieved ${data.bars.length} bars` : undefined
+        status: !response.ok || data.error ? 'error' : 'success',
+        message: data.error || 'Success',
+        details: data?.data ? `Retrieved ${data.data.length} bars` : undefined
       };
     } catch (err: any) {
       tests[2] = { ...tests[2], status: 'error', message: err.message };
@@ -82,25 +92,28 @@ export const ApiDiagnostics = () => {
 
     // Test 4: Options
     try {
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'options', symbol: 'SPY' }
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'options', symbol: 'SPY' })
       });
-      
-      if (error?.message?.includes('404')) {
+      const data = await response.json();
+
+      if (response.status === 404 || data.error?.includes('404')) {
         tests[3] = {
           ...tests[3],
           status: 'error',
           message: 'Options not available',
           details: 'Paper accounts have limited options access. Upgrade to live account for full options data.'
         };
-      } else if (error) {
-        tests[3] = { ...tests[3], status: 'error', message: error.message };
+      } else if (!response.ok || data.error) {
+        tests[3] = { ...tests[3], status: 'error', message: data.error };
       } else {
         tests[3] = {
           ...tests[3],
           status: 'success',
           message: 'Success',
-          details: data?.contracts ? `Found ${data.contracts.length} contracts` : undefined
+          details: data?.data ? `Found ${data.data.length} contracts` : undefined
         };
       }
     } catch (err: any) {
@@ -110,14 +123,17 @@ export const ApiDiagnostics = () => {
 
     // Test 5: Orders
     try {
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'orders' }
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'orders' })
       });
+      const data = await response.json();
       tests[4] = {
         ...tests[4],
-        status: error ? 'error' : 'success',
-        message: error ? error.message : 'Success',
-        details: data?.orders ? `Retrieved ${data.orders.length} orders` : undefined
+        status: !response.ok || data.error ? 'error' : 'success',
+        message: data.error || 'Success',
+        details: data?.data ? `Retrieved ${data.data.length} orders` : undefined
       };
     } catch (err: any) {
       tests[4] = { ...tests[4], status: 'error', message: err.message };

@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
+
+const DOCKER_API_URL = 'http://localhost:3001/api';
 
 export interface ApiTest {
   name: string;
@@ -54,18 +55,21 @@ export const useApiDiagnostics = () => {
     // Test 1: Alpaca Account
     try {
       const start = Date.now();
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'account' },
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'account' }),
       });
+      const data = await response.json();
       const duration = Date.now() - start;
-      
-      console.log('Account test:', { data, error, duration });
-      
+
+      console.log('Account test:', { data, duration });
+
       diagnosticTests[0] = {
         ...diagnosticTests[0],
-        status: error || !data || data.error ? 'error' : 'success',
+        status: !response.ok || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message || data?.error,
+        error: data?.error,
         duration,
       };
     } catch (e: any) {
@@ -81,18 +85,21 @@ export const useApiDiagnostics = () => {
     // Test 2: Orders History
     try {
       const start = Date.now();
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'orders' },
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'orders' }),
       });
+      const data = await response.json();
       const duration = Date.now() - start;
-      
-      console.log('Orders test:', { data, error, duration });
-      
+
+      console.log('Orders test:', { data, duration });
+
       diagnosticTests[1] = {
         ...diagnosticTests[1],
-        status: error || !data || data.error ? 'error' : 'success',
+        status: !response.ok || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message || data?.error,
+        error: data?.error,
         duration,
       };
     } catch (e: any) {
@@ -108,18 +115,21 @@ export const useApiDiagnostics = () => {
     // Test 3: Stock Quote
     try {
       const start = Date.now();
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'quote', symbol: 'SPY' },
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'quote', symbol: 'SPY' }),
       });
+      const data = await response.json();
       const duration = Date.now() - start;
-      
-      console.log('Quote test:', { data, error, duration });
-      
+
+      console.log('Quote test:', { data, duration });
+
       diagnosticTests[2] = {
         ...diagnosticTests[2],
-        status: error || !data || data.error ? 'error' : 'success',
+        status: !response.ok || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message || data?.error,
+        error: data?.error,
         duration,
       };
     } catch (e: any) {
@@ -135,24 +145,27 @@ export const useApiDiagnostics = () => {
     // Test 4: Historical Bars (Direct Alpaca Data API test)
     try {
       const start = Date.now();
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { 
-          dataType: 'bars', 
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dataType: 'bars',
           symbol: 'SPY',
           start: '2024-01-01T09:30:00Z',
           end: '2024-01-05T16:00:00Z',
           timeframe: '1Min'
-        },
+        }),
       });
+      const data = await response.json();
       const duration = Date.now() - start;
-      
-      console.log('Bars test:', { data, error, duration });
-      
+
+      console.log('Bars test:', { data, duration });
+
       diagnosticTests[3] = {
         ...diagnosticTests[3],
-        status: error || !data || data.error ? 'error' : 'success',
+        status: !response.ok || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message || data?.error,
+        error: data?.error,
         duration,
       };
     } catch (e: any) {
@@ -168,18 +181,21 @@ export const useApiDiagnostics = () => {
     // Test 5: Options Chain
     try {
       const start = Date.now();
-      const { data, error } = await supabase.functions.invoke('fetch-market-data', {
-        body: { dataType: 'options', symbol: 'SPY' },
+      const response = await fetch(`${DOCKER_API_URL}/fetch-market-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ dataType: 'options', symbol: 'SPY' }),
       });
+      const data = await response.json();
       const duration = Date.now() - start;
-      
-      console.log('Options test:', { data, error, duration });
-      
+
+      console.log('Options test:', { data, duration });
+
       diagnosticTests[4] = {
         ...diagnosticTests[4],
-        status: error || !data || data.error ? 'error' : 'success',
+        status: !response.ok || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message || data?.error,
+        error: data?.error,
         duration,
       };
     } catch (e: any) {
@@ -195,8 +211,10 @@ export const useApiDiagnostics = () => {
     // Test 6: Backtest (small test)
     try {
       const start = Date.now();
-      const { data, error } = await supabase.functions.invoke('options-backtester', {
-        body: {
+      const response = await fetch(`${DOCKER_API_URL}/backtest/run`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           strategy: 'HAVWAP-Rev-v2',
           symbol: 'SPY',
           startDate: '2024-01-02',
@@ -205,17 +223,18 @@ export const useApiDiagnostics = () => {
           initialCapital: 100000,
           commissionPerContract: 0.65,
           slippagePct: 50,
-        },
+        }),
       });
+      const data = await response.json();
       const duration = Date.now() - start;
-      
-      console.log('Backtest test:', { data, error, duration });
-      
+
+      console.log('Backtest test:', { data, duration });
+
       diagnosticTests[5] = {
         ...diagnosticTests[5],
-        status: error || !data || data.error ? 'error' : 'success',
+        status: !response.ok || data.error ? 'error' : 'success',
         response: data,
-        error: error?.message || data?.error,
+        error: data?.error,
         duration,
       };
     } catch (e: any) {

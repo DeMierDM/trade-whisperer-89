@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+const DOCKER_API_URL = 'http://localhost:3001/api';
 
 export interface StrategyDefaults {
   ema_length: number;
@@ -19,20 +20,15 @@ export const useStrategyDefaults = () => {
   const fetchDefaults = async () => {
     try {
       console.log('Fetching strategy defaults...');
-      
-      const { data, error } = await supabase
-        .from('strategy_defaults')
-        .select('*')
-        .maybeSingle();
 
-      console.log('Strategy defaults response:', data);
-      console.log('Strategy defaults error:', error);
+      const response = await fetch(`${DOCKER_API_URL}/config/strategy-defaults`);
 
-      if (error) {
-        console.error('Error fetching strategy defaults:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
+      const data = await response.json();
+      console.log('Strategy defaults response:', data);
       setDefaults(data);
     } catch (error: any) {
       console.error('Error in fetchDefaults:', error);
@@ -49,28 +45,15 @@ export const useStrategyDefaults = () => {
   const saveDefaults = async (newDefaults: Partial<StrategyDefaults>) => {
     try {
       console.log('Saving strategy defaults:', newDefaults);
-      
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError) {
-        console.error('Auth error:', userError);
-        throw userError;
-      }
-      
-      if (!user) {
-        throw new Error('Not authenticated');
-      }
 
-      const { error } = await supabase
-        .from('strategy_defaults')
-        .upsert({
-          user_id: user.id,
-          ...newDefaults,
-        });
+      const response = await fetch(`${DOCKER_API_URL}/config/strategy-defaults`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newDefaults),
+      });
 
-      if (error) {
-        console.error('Upsert error:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       console.log('Strategy defaults saved successfully');

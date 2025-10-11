@@ -1,67 +1,10 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { Home, Activity, BarChart3, Sliders, History, Settings, Brain, LogOut } from "lucide-react";
-import { useEffect, useState } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import { Button } from "@/components/ui/button";
-import { useToast } from "@/hooks/use-toast";
-import { User } from "@supabase/supabase-js";
+import { Home, Activity, BarChart3, Sliders, History, Settings, Brain } from "lucide-react";
 
 const Layout = ({ children }: { children: React.ReactNode }) => {
   const location = useLocation();
-  const navigate = useNavigate();
-  const { toast } = useToast();
-  const [user, setUser] = useState<User | null>(null);
-  const [username, setUsername] = useState<string>("");
-
-  useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUsername(session.user.id);
-      }
-    });
-
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchUsername(session.user.id);
-      } else {
-        setUsername("");
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, []);
-
-  const fetchUsername = async (userId: string) => {
-    const { data } = await supabase
-      .from('profiles')
-      .select('username')
-      .eq('id', userId)
-      .single();
-    
-    if (data) {
-      setUsername(data.username);
-    }
-  };
-
-  const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) {
-      toast({
-        title: "Error signing out",
-        description: error.message,
-        variant: "destructive",
-      });
-    } else {
-      toast({
-        title: "Signed out",
-        description: "You have been successfully signed out.",
-      });
-      navigate("/auth");
-    }
-  };
+  const username = "Trader"; // Static username for local mode
 
   const navigation = [
     { name: "Home", href: "/", icon: Home },
@@ -83,7 +26,7 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
           </h1>
           <p className="text-xs text-muted-foreground mt-1">Options Trading Platform</p>
         </div>
-        
+
         <nav className="flex-1 px-3 space-y-1">
           {navigation.map((item) => {
             const isActive = location.pathname === item.href;
@@ -121,18 +64,12 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
               {navigation.find(n => n.href === location.pathname)?.name || "Dashboard"}
             </p>
           </div>
-          {user && (
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="text-sm font-medium">{username}</p>
-                <p className="text-xs text-muted-foreground">{user.email}</p>
-              </div>
-              <Button variant="outline" size="sm" onClick={handleSignOut}>
-                <LogOut className="w-4 h-4 mr-2" />
-                Sign Out
-              </Button>
+          <div className="flex items-center gap-4">
+            <div className="text-right">
+              <p className="text-sm font-medium">{username}</p>
+              <p className="text-xs text-muted-foreground">Local Mode</p>
             </div>
-          )}
+          </div>
         </div>
         <div className="flex-1">
           {children}

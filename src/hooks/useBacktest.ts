@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 export interface BacktestConfig {
@@ -25,6 +24,8 @@ export interface BacktestResults {
   profitFactor: number;
 }
 
+const DOCKER_API_URL = 'http://localhost:3001/api';
+
 export const useBacktest = () => {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<BacktestResults | null>(null);
@@ -36,22 +37,21 @@ export const useBacktest = () => {
 
     try {
       console.log('Starting backtest with config:', config);
-      
-      const { data, error } = await supabase.functions.invoke('options-backtester', {
-        body: config,
+
+      const response = await fetch(`${DOCKER_API_URL}/backtest/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
       console.log('Backtest response:', data);
-      console.log('Backtest error:', error);
-
-      if (error) {
-        console.error('Backtest invocation error:', error);
-        throw error;
-      }
-
-      if (!data) {
-        throw new Error('No response data from backtest');
-      }
 
       if (data.error) {
         throw new Error(data.error);
@@ -67,19 +67,16 @@ export const useBacktest = () => {
 
       // Fetch full results
       console.log('Fetching backtest results for ID:', data.backtestId);
-      const { data: backtestRun, error: fetchError } = await supabase
-        .from('backtest_runs')
-        .select('*')
-        .eq('id', data.backtestId)
-        .maybeSingle();
+      const resultsResponse = await fetch(`${DOCKER_API_URL}/backtest/${data.backtestId}`);
 
-      if (fetchError) {
-        console.error('Error fetching backtest run:', fetchError);
-        throw fetchError;
+      if (!resultsResponse.ok) {
+        throw new Error(`HTTP error! status: ${resultsResponse.status}`);
       }
 
+      const backtestRun = await resultsResponse.json();
+
       if (!backtestRun) {
-        throw new Error('Backtest run not found in database');
+        throw new Error('Backtest run not found');
       }
 
       console.log('Backtest run data:', backtestRun);
@@ -115,17 +112,14 @@ export const useBacktest = () => {
   const fetchTrades = async (backtestId: string) => {
     try {
       console.log('Fetching trades for backtest ID:', backtestId);
-      
-      const { data, error } = await supabase
-        .from('backtest_trades')
-        .select('*')
-        .eq('backtest_run_id', backtestId)
-        .order('entry_time', { ascending: false });
 
-      if (error) {
-        console.error('Error fetching trades:', error);
-        throw error;
+      const response = await fetch(`${DOCKER_API_URL}/backtest/${backtestId}/trades`);
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const data = await response.json();
 
       console.log(`Fetched ${data?.length || 0} trades`);
       return data || [];

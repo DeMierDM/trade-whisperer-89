@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
 
 export interface OptimizerConfig {
@@ -25,6 +24,8 @@ export interface OptimizationResults {
   }>;
 }
 
+const DOCKER_API_URL = 'http://localhost:3001/api';
+
 export const useOptimizer = () => {
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState<OptimizationResults | null>(null);
@@ -38,22 +39,21 @@ export const useOptimizer = () => {
 
     try {
       console.log('Starting optimization with config:', config);
-      
-      const { data, error } = await supabase.functions.invoke('strategy-optimizer', {
-        body: config,
+
+      const response = await fetch(`${DOCKER_API_URL}/optimize/run`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(config),
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
       console.log('Optimization response:', data);
-      console.log('Optimization error:', error);
-
-      if (error) {
-        console.error('Optimization invocation error:', error);
-        throw error;
-      }
-
-      if (!data) {
-        throw new Error('No response data from optimizer');
-      }
 
       if (data.error) {
         throw new Error(data.error);

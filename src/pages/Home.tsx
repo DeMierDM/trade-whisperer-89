@@ -2,7 +2,6 @@ import { useState, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Activity, TrendingUp, BarChart3, Settings, Brain, History, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 const Home = () => {
@@ -30,29 +29,32 @@ const Home = () => {
       console.log('Fetching account data...');
       
       // Fetch account and positions data
-      const { data: accountResponse, error: accountError } = await supabase.functions.invoke("fetch-market-data", {
-        body: { dataType: "account" },
+      const accountResponse = await fetch("http://localhost:3001/api/fetch-market-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ dataType: "account" }),
       });
 
-      console.log('Account response:', accountResponse);
-      console.log('Account error:', accountError);
-
-      if (accountError) {
-        console.error('Account error:', accountError);
-        throw accountError;
+      if (!accountResponse.ok) {
+        throw new Error(`HTTP error! status: ${accountResponse.status}`);
       }
 
-      if (!accountResponse) {
+      const accountData = await accountResponse.json();
+      console.log('Account response:', accountData);
+
+      if (accountData?.error) {
+        throw new Error(accountData.error);
+      }
+
+      if (!accountData) {
         throw new Error('No response from server');
       }
 
-      if (accountResponse.error) {
-        throw new Error(accountResponse.error);
-      }
-
-      if (accountResponse?.data) {
-        const account = accountResponse.data.account;
-        const positions = accountResponse.data.positions || [];
+      if (accountData?.data) {
+        const account = accountData.data.account;
+        const positions = accountData.data.positions || [];
         
         console.log('Account data:', account);
         console.log('Positions:', positions);
@@ -97,18 +99,21 @@ const Home = () => {
   const fetchWinRate = async () => {
     try {
       console.log('Fetching win rate...');
-      
-      const { data: ordersResponse, error: ordersError } = await supabase.functions.invoke("fetch-market-data", {
-        body: { dataType: "orders" },
+
+      const response = await fetch("http://localhost:3001/api/fetch-market-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ dataType: "orders" }),
       });
 
-      console.log('Orders response:', ordersResponse);
-      console.log('Orders error:', ordersError);
-
-      if (ordersError) {
-        console.error('Orders error:', ordersError);
-        throw ordersError;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const ordersResponse = await response.json();
+      console.log('Orders response:', ordersResponse);
 
       if (ordersResponse?.error) {
         throw new Error(ordersResponse.error);
@@ -117,11 +122,11 @@ const Home = () => {
       if (ordersResponse?.data && Array.isArray(ordersResponse.data)) {
         console.log('Processing orders:', ordersResponse.data.length);
         const closedOrders = ordersResponse.data.filter((o: any) => o.status === 'filled');
-        
+
         // Group orders into trades (buy + sell pairs)
         const trades: any[] = [];
         const ordersBySymbol: { [key: string]: any[] } = {};
-        
+
         closedOrders.forEach((order: any) => {
           const symbol = order.symbol;
           if (!ordersBySymbol[symbol]) ordersBySymbol[symbol] = [];
@@ -134,18 +139,18 @@ const Home = () => {
 
         Object.values(ordersBySymbol).forEach((orders: any[]) => {
           orders.sort((a, b) => new Date(a.filled_at).getTime() - new Date(b.filled_at).getTime());
-          
+
           for (let i = 0; i < orders.length - 1; i += 2) {
             const entry = orders[i];
             const exit = orders[i + 1];
-            
+
             if (entry && exit) {
               const entryPrice = parseFloat(entry.filled_avg_price || 0);
               const exitPrice = parseFloat(exit.filled_avg_price || 0);
-              const pnl = entry.side === 'buy' 
+              const pnl = entry.side === 'buy'
                 ? (exitPrice - entryPrice) * parseFloat(entry.filled_qty || 0)
                 : (entryPrice - exitPrice) * parseFloat(entry.filled_qty || 0);
-              
+
               if (pnl > 0) wins++;
               else if (pnl < 0) losses++;
             }

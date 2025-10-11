@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+const DOCKER_API_URL = 'http://localhost:3001/api';
 
 export interface RiskControls {
   max_positions: number;
@@ -27,20 +28,15 @@ export const useRiskControls = () => {
   const fetchControls = async () => {
     try {
       console.log('Fetching risk controls...');
-      
-      const { data, error } = await supabase
-        .from('risk_controls')
-        .select('*')
-        .maybeSingle();
 
-      console.log('Risk controls response:', data);
-      console.log('Risk controls error:', error);
+      const response = await fetch(`${DOCKER_API_URL}/config/risk-controls`);
 
-      if (error) {
-        console.error('Error fetching risk controls:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
+      const data = await response.json();
+      console.log('Risk controls response:', data);
       setControls(data);
     } catch (error: any) {
       console.error('Error in fetchControls:', error);
@@ -57,28 +53,15 @@ export const useRiskControls = () => {
   const saveControls = async (newControls: Partial<RiskControls>) => {
     try {
       console.log('Saving risk controls:', newControls);
-      
-      const { data: { user }, error: userError } = await supabase.auth.getUser();
-      
-      if (userError) {
-        console.error('Auth error:', userError);
-        throw userError;
-      }
-      
-      if (!user) {
-        throw new Error('Not authenticated');
-      }
 
-      const { error } = await supabase
-        .from('risk_controls')
-        .upsert({
-          user_id: user.id,
-          ...newControls,
-        });
+      const response = await fetch(`${DOCKER_API_URL}/config/risk-controls`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newControls),
+      });
 
-      if (error) {
-        console.error('Upsert error:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
       console.log('Risk controls saved successfully');

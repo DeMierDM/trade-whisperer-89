@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
+
+const DOCKER_API_URL = 'http://localhost:3001/api';
 
 export interface ApiKey {
   id: string;
@@ -20,17 +21,13 @@ export const useApiKeys = () => {
 
   const fetchApiKeys = async () => {
     try {
-      // Use the safe view that only exposes masked keys
-      const { data, error } = await supabase
-        .from('api_keys_safe')
-        .select('*')
-        .order('created_at', { ascending: false });
+      const response = await fetch(`${DOCKER_API_URL}/config/api-keys`);
 
-      if (error) {
-        console.error('Error fetching API keys:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
+      const data = await response.json();
       setApiKeys(data || []);
     } catch (error: any) {
       console.error('Error in fetchApiKeys:', error);
@@ -55,18 +52,17 @@ export const useApiKeys = () => {
     mode?: string
   ) => {
     try {
-      const { data, error } = await supabase.functions.invoke('test-api-connection', {
-        body: { provider, apiKey, apiSecret, mode },
+      const response = await fetch(`${DOCKER_API_URL}/test-connection`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, apiKey, apiSecret, mode }),
       });
 
-      if (error) {
-        console.error('Connection test invocation error:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      if (!data) {
-        throw new Error('No response from connection test');
-      }
+      const data = await response.json();
 
       toast({
         title: data.isConnected ? 'Connection successful' : 'Connection failed',
