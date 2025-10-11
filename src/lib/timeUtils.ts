@@ -2,6 +2,8 @@
 
 export interface ChartBar {
   time: string;
+  timestamp: number; // Unix timestamp in seconds (for TradingView)
+  date: string;
   open: number;
   high: number;
   low: number;
