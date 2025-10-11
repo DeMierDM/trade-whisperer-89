@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # Local PostgreSQL Database (100% Free)
+  database:
+    image: postgres:15-alpine
+    container_name: trading_db
+    environment:
+      POSTGRES_DB: trading_system
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trading123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"  # Use port 5433 to avoid conflicts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  # Local API Server (replaces Supabase Edge Functions)
+  api_server:
+    build:
+      context: ./docker/api-server
+      dockerfile: Dockerfile
+    container_name: trading_api
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql://trader:trading123@database:5432/trading_system
+      PORT: 3001
+    ports:
+      - "3001:3001"
+    depends_on:
+      - database
+    volumes:
+      - ./docker/api-server:/app
+      - ./data:/app/data  # Mount data directory to persist CSV files
+    restart: unless-stopped
+
+  # Redis for WebSocket Session Management (Optional but helpful)
+  redis:
+    image: redis:7-alpine
+    container_name: trading_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+volumes:
+  postgres_data:

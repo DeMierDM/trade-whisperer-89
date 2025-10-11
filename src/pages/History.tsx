@@ -4,7 +4,6 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Search, Download, Eye, Loader2 } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 
 interface Order {
@@ -35,17 +34,20 @@ const History = () => {
     try {
       console.log('Fetching order history...');
       
-      const { data, error } = await supabase.functions.invoke("fetch-market-data", {
-        body: { dataType: "orders" },
+      const response = await fetch("http://localhost:3001/api/fetch-market-data", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ dataType: "orders" }),
       });
 
-      console.log('Orders response:', data);
-      console.log('Orders error:', error);
-
-      if (error) {
-        console.error('Orders error:', error);
-        throw error;
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
       }
+
+      const data = await response.json();
+      console.log('Orders response:', data);
 
       if (data?.error) {
         throw new Error(data.error);

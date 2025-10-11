@@ -3,7 +3,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Pause, Square, RefreshCw, AlertTriangle, Loader2 } from "lucide-react";
+import { Play, Pause, Square, RefreshCw, AlertTriangle, Loader2, Menu, X } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { getMarketStatus, MarketStatus } from "@/lib/marketHours";
 import { DataFlowDebugPanel } from "@/components/DataFlowDebugPanel";
@@ -39,6 +39,7 @@ const Trading = () => {
   const [loading, setLoading] = useState(false);
   const [initialDataLoaded, setInitialDataLoaded] = useState(false);
   const [marketStatus, setMarketStatus] = useState<MarketStatus>(getMarketStatus());
+  const [showTabs, setShowTabs] = useState(false); // Hamburger menu state
 
   // Chart ref for direct updates (bypasses React)
   const chartApiRef = useRef<ChartUpdateAPI | null>(null);
@@ -337,9 +338,38 @@ const Trading = () => {
       <div className="container mx-auto p-6 space-y-4">
         {/* Header with Bot Controls */}
         <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Live Trading</h1>
-            <p className="text-muted-foreground">Real-time options trading with HAVWAP strategies</p>
+          <div className="flex items-center gap-6">
+            <div>
+              <h1 className="text-3xl font-bold">Live Trading</h1>
+              <p className="text-muted-foreground">Real-time options trading with HAVWAP strategies</p>
+            </div>
+            
+            {/* Live Ticker Display */}
+            <div className="flex items-center gap-4 p-4 rounded-lg bg-secondary/50 border">
+              <div className="flex items-center gap-2">
+                <span className="font-semibold text-lg">{selectedSymbol}</span>
+                {quotes.has(selectedSymbol) && (
+                  <>
+                    <span className="text-2xl font-bold text-success">
+                      ${quotes.get(selectedSymbol)?.ask?.toFixed(2) || '0.00'}
+                    </span>
+                    <div className="text-sm text-muted-foreground">
+                      <div>Bid: ${quotes.get(selectedSymbol)?.bid?.toFixed(2) || '0.00'}</div>
+                      <div>Ask: ${quotes.get(selectedSymbol)?.ask?.toFixed(2) || '0.00'}</div>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      Live • {new Date().toLocaleTimeString()}
+                    </div>
+                  </>
+                )}
+                {!quotes.has(selectedSymbol) && connected && (
+                  <span className="text-muted-foreground">Waiting for data...</span>
+                )}
+                {!connected && (
+                  <span className="text-destructive">Disconnected</span>
+                )}
+              </div>
+            </div>
           </div>
           <div className="flex items-center gap-3">
             <Badge
@@ -394,9 +424,9 @@ const Trading = () => {
             </div>
 
             {/* Main Grid */}
-            <div className="grid grid-cols-12 gap-4">
+            <div className="grid grid-cols-12 gap-4 overflow-hidden">
               {/* Chart Panel - TradingView */}
-              <Card className="col-span-8 p-6 bg-gradient-card border-border shadow-card">
+              <Card className="col-span-8 p-6 bg-gradient-card border-border shadow-card overflow-hidden">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <h2 className="text-xl font-semibold">{selectedSymbol}</h2>
@@ -419,7 +449,7 @@ const Trading = () => {
                 </div>
 
                 {/* TradingView Lightweight Chart */}
-                <div className="h-[500px]">
+                <div className="h-[500px] overflow-hidden w-full">
                   {bars.length > 0 ? (
                     <LiveTradingViewChart
                       ref={chartApiRef}
