@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,12 +8,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Play, Download, Eye, Loader2, BarChart3, Database, Target } from "lucide-react";
 import { useBacktest } from "@/hooks/useBacktest";
 import { useBacktestingData } from "@/hooks/useBacktestingData";
-import { useOptionsByDTE } from "@/hooks/useOptionsByDTE";
 // LIVE WebSocket through Docker server - no direct Alpaca connections
 import { useDockerWebSocket } from "@/hooks/useDockerWebSocket";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ChartBar } from "@/lib/timeUtils";
 import { useToast } from "@/hooks/use-toast";
+import { LiveTradingViewChart, ChartUpdateAPI } from "@/components/LiveTradingViewChart";
+
+interface BacktestConfig {
+  strategy: string;
+  symbol: string;
+  startDate: string;
+  endDate: string;
+  timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day';
+  initialCapital: number;
+  commissionPerContract: number;
+  slippagePct: number;
+}
 
 const Backtesting = () => {
   const { toast } = useToast();
@@ -26,20 +37,32 @@ const Backtesting = () => {
     clearData 
   } = useBacktestingData();
 
-  const {
-    loading: optionsLoading,
-    error: optionsError,
-    data: optionsData,
-    fetchOptionsByDTE,
-    clearData: clearOptionsData,
-    getSymbols: getOptionSymbols
-  } = useOptionsByDTE();
 
-  const [config, setConfig] = useState({
+
+  // Chart reference for backtesting chart (separate from trading chart)
+  const backtestChartRef = useRef<ChartUpdateAPI>(null);
+
+  // Chart data for backtesting visualization - this is the main chart state
+  const [chartBars, setChartBars] = useState<ChartBar[]>([]);
+  
+  // Track loading states separately to avoid race conditions
+  const [stockDataLoaded, setStockDataLoaded] = useState(false);
+  const [optionsDataLoaded, setOptionsDataLoaded] = useState(false);
+  
+  // Options contract selection and data
+  const [selectedContract, setSelectedContract] = useState<string>('');
+  const [availableContracts, setAvailableContracts] = useState<string[]>([]);
+  const [optionsData, setOptionsData] = useState<any>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+
+  // API URL for backtesting data
+  const BACKTESTING_API_URL = `http://localhost:3002/api`;
+
+    const [config, setConfig] = useState<BacktestConfig>({
     strategy: 'HAVWAP-Rev-v2',
     symbol: 'SPY',
-    startDate: '2024-01-01',
-    endDate: '2024-03-28',
+    startDate: '2025-01-16',
+    endDate: '2025-01-17',
     timeframe: '1Min' as '1Min' | '5Min' | '15Min' | '1Hour' | '1Day',
     initialCapital: 100000,
     commissionPerContract: 0.65,
@@ -50,11 +73,13 @@ const Backtesting = () => {
   const [optionSymbols, setOptionSymbols] = useState<string[]>([]);
   const [dataPreviewMode, setDataPreviewMode] = useState(false);
   
+  // Legacy manual input removed - using intelligent contract generation
+  
   // DTE-based options configuration
   const [optionsConfig, setOptionsConfig] = useState({
     expiryDate: '', // YYMMDD format
     strikeRange: 5, // Number of strikes above/below ATM
-    strikeSpacing: 5, // Dollar spacing between strikes
+    strikeSpacing: 1, // Dollar spacing between strikes
   });
 
   // LIVE WebSocket connection through Docker server for backtesting preview
@@ -70,6 +95,9 @@ const Backtesting = () => {
       loadTrades();
     }
   }, [results]);
+
+  // Remove automatic options fetching - we'll do it sequentially
+  // useEffect removed to prevent race conditions between stock and options data
 
   const loadTrades = async () => {
     if (!results) return;
@@ -91,73 +119,176 @@ const Backtesting = () => {
     setEquityCurve(curve);
   };
 
-  const handleFetchOptionsData = async () => {
-    if (!optionContractsInput.trim()) {
+  // SIMPLIFIED OPTIONS FETCH: Use direct API call to working backend
+  const handleFetchOptionsData = async (hasStockData = false) => {
+    console.log('[SIMPLE OPTIONS] 🚀 Fetching options data...');
+
+    if (!hasStockData && (!stockDataLoaded || chartBars.length === 0)) {
       toast({
-        title: "No Option Symbols",
-        description: "Please enter option symbols to fetch data for.",
+        title: "No Stock Data",
+        description: "Please fetch historical stock data first.",
         variant: "destructive"
       });
       return;
     }
 
-    // Parse comma-separated option symbols
-    const symbols = optionContractsInput.split(',').map(s => s.trim()).filter(s => s);
-    
-    // Validate option symbol format (e.g., SPY251010C00653000)
-    const invalidSymbols = symbols.filter(symbol => !symbol.match(/^[A-Z]+\d{6}[CP]\d{8}$/));
-    
-    if (invalidSymbols.length > 0) {
+    try {
+      // Simple direct API call - just like the working curl command
+      const startISO = new Date(config.startDate + 'T09:30:00.000Z').toISOString();
+      const endISO = new Date(config.endDate + 'T20:00:00.000Z').toISOString();
+      
+      console.log('[SIMPLE OPTIONS] � Making direct API call to backtesting server...');
+      
+      const response = await fetch(`${BACKTESTING_API_URL}/fetch-historical-data`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          dataType: 'options_bars_by_date_range',
+          ticker: config.symbol,
+          start: startISO,
+          end: endISO,
+          timeframe: '1min',
+          strikeRange: 5,
+          strikeSpacing: 1
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`API error: ${response.status} - ${errorText}`);
+      }
+
+      const result = await response.json();
+      console.log('[SIMPLE OPTIONS] ✅ Received data:', {
+        totalContracts: Object.keys(result.data?.bars || {}).length,
+        totalBars: result.metadata?.total_bars || 0,
+        sampleContracts: Object.keys(result.data?.bars || {}).slice(0, 3)
+      });
+
+      if (result.data && result.data.bars) {
+        const contractsList = Object.keys(result.data.bars);
+        
+        // Store options data in local state
+        setOptionsData({
+          bars: result.data.bars,
+          totalBars: result.metadata?.total_bars || 0,
+          symbolsWithData: contractsList.length,
+          dateRange: {
+            start: config.startDate,
+            end: config.endDate
+          }
+        });
+        
+        setAvailableContracts(contractsList);
+        setSelectedContract(contractsList[0] || '');
+        setOptionsDataLoaded(true);
+        setOptionsError(null);
+        
+        toast({
+          title: "Options Data Loaded!",
+          description: `Loaded ${contractsList.length} contracts with ${result.metadata?.total_bars || 0} bars.`,
+        });
+
+        return result;
+      } else {
+        throw new Error('No options data received');
+      }
+    } catch (error) {
+      console.error('[SIMPLE OPTIONS] Error:', error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch options data";
+      setOptionsError(errorMessage);
       toast({
-        title: "Invalid Option Symbols",
-        description: `Invalid format: ${invalidSymbols.join(', ')}. Use format like SPY251010C00653000`,
+        title: "Options Fetch Failed",
+        description: errorMessage,
         variant: "destructive"
       });
-      return;
-    }
-
-    console.log('[BACKTESTING] Fetching options data for symbols:', symbols);
-    
-    const result = await fetchOptionsData({
-      symbols: symbols,
-      startDate: config.startDate,
-      endDate: config.endDate,
-      timeframe: config.timeframe === '1Min' ? '1min' : 
-                 config.timeframe === '5Min' ? '5min' :
-                 config.timeframe === '15Min' ? '15min' :
-                 config.timeframe === '1Hour' ? '1hour' : '1day',
-      limit: 1000
-    });
-
-    if (result) {
-      toast({
-        title: "Options Data Loaded",
-        description: `Loaded ${result.totalBars} bars for ${result.totalSymbols} option contracts`,
-      });
-    } else if (optionsError) {
-      toast({
-        title: "Options Data Fetch Failed",
-        description: optionsError,
-        variant: "destructive"
-      });
+      throw error;  
     }
   };
 
-  };
+
 
   const handleFetchData = async () => {
+    if (!config.symbol || !config.startDate || !config.endDate) {
+      toast({
+        title: "Missing Configuration",
+        description: "Please provide symbol, start date, and end date.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    try {
+      // Reset states
+      setStockDataLoaded(false);
+      setOptionsDataLoaded(false);
+      setChartBars([]);
+      setAvailableContracts([]);
+      setSelectedContract('');
+
+      console.log('[SIMPLE FETCH] 📊 Fetching stock data for', config.symbol);
+      
+      // Fetch stock data
+      const stockData = await fetchHistoricalData({
+        symbol: config.symbol,
+        startDate: config.startDate,
+        endDate: config.endDate,
+        timeframe: config.timeframe
+      });
+
+      if (!stockData || !stockData.bars || stockData.bars.length === 0) {
+        throw new Error('No stock data received');
+      }
+
+      // Load stock data to chart
+      setChartBars(stockData.bars);
+      setStockDataLoaded(true);
+
+      toast({
+        title: "Stock Data Loaded",
+        description: `Loaded ${stockData.totalBars} bars. Now fetching options...`,
+      });
+
+      // Fetch options data immediately (no timeout needed)
+      console.log('[SIMPLE FETCH] 🎯 Fetching options data...');
+      console.log('[SIMPLE FETCH] Stock data loaded:', stockData.bars.length, 'bars');
+      const optionsResult = await handleFetchOptionsData(true);
+      
+      if (optionsResult && optionsResult.data && optionsResult.data.bars) {
+        const contracts = Object.keys(optionsResult.data.bars);
+        setAvailableContracts(contracts);
+        setSelectedContract(contracts[0] || '');
+        setOptionsDataLoaded(true);
+        
+        toast({
+          title: "Complete!",
+          description: `Loaded stock data and ${contracts.length} option contracts.`,
+        });
+      }
+
+    } catch (error) {
+      console.error('[SIMPLE FETCH] Error:', error);
+      toast({
+        title: "Fetch Failed",
+        description: error instanceof Error ? error.message : "Failed to fetch data",
+        variant: "destructive"
+      });
+    }
+  };
 
   const handleRunBacktest = () => {
-    if (!historicalData) {
+    if (!stockDataLoaded || chartBars.length === 0) {
       toast({
         title: "No Data Available",
-        description: "Please fetch historical data first before running a backtest.",
+        description: "Please fetch historical stock data first before running a backtest.",
         variant: "destructive"
       });
       return;
     }
     
-    console.log('[BACKTESTING] Running backtest with', historicalData.totalBars, 'bars');
+    console.log('[BACKTESTING] Running backtest with', chartBars.length, 'bars');
     runBacktest(config);
   };
 
@@ -275,36 +406,9 @@ const Backtesting = () => {
                 />
               </div>
 
-              <div>
-                <Label>Option Contracts (comma-separated)</Label>
-                <Input 
-                  placeholder="SPY251010C00653000,SPY251010P00653000" 
-                  className="mt-1"
-                  value={optionContractsInput}
-                  onChange={(e) => setOptionContractsInput(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground mt-1">
-                  Enter option symbols in format: SYMBOL + YYMMDD + C/P + STRIKE (e.g., SPY251010C00653000)
-                </p>
-              </div>
+              {/* Legacy manual input removed - using sequential approach now */}
 
-              <Button 
-                className="w-full mt-3 bg-orange-600 hover:bg-orange-700 shadow-glow"
-                onClick={handleFetchOptionsData}
-                disabled={optionsLoading || !optionContractsInput.trim() || !config.startDate || !config.endDate}
-              >
-                {optionsLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Fetching Options...
-                  </>
-                ) : (
-                  <>
-                    <Target className="w-4 h-4 mr-2" />
-                    Fetch Options Data
-                  </>
-                )}
-              </Button>
+
 
               {optionsData && (
                 <div className="mt-3 p-3 rounded-lg bg-orange-500/10 border border-orange-500/20">
@@ -317,7 +421,11 @@ const Backtesting = () => {
                       variant="ghost" 
                       size="sm" 
                       onClick={() => {
-                        clearOptionsData();
+                        setOptionsData(null);
+                      setOptionsError(null);
+                      setOptionsDataLoaded(false);
+                      setAvailableContracts([]);
+                      setSelectedContract('');
                       }}
                       className="h-6 px-2 text-xs"
                     >
@@ -325,7 +433,7 @@ const Backtesting = () => {
                     </Button>
                   </div>
                   <p className="text-xs text-orange-600 mt-1">
-                    {optionsData.totalBars} bars for {optionsData.totalSymbols} contracts ({optionsData.dateRange.start} to {optionsData.dateRange.end})
+                    {optionsData?.totalBars || 0} bars for {optionsData?.symbolsWithData || 0} contracts ({optionsData?.dateRange?.start || ''} to {optionsData?.dateRange?.end || ''})
                   </p>
                 </div>
               )}
@@ -349,24 +457,31 @@ const Backtesting = () => {
                 ) : (
                   <>
                     <Database className="w-4 h-4 mr-2" />
-                    Fetch Historical Data
+                    Fetch Data & Generate Options
                   </>
                 )}
               </Button>
 
-              {historicalData && (
+              {stockDataLoaded && chartBars.length > 0 && (
                 <div className="mt-3 p-3 rounded-lg bg-green-500/10 border border-green-500/20">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <BarChart3 className="w-4 h-4 text-green-500" />
-                      <span className="text-sm font-medium text-green-500">Data Ready</span>
+                      <span className="text-sm font-medium text-green-500">Stock Data Ready</span>
+                      {optionsDataLoaded && <span className="text-xs text-green-600">+ Options</span>}
                     </div>
                     <Button 
                       variant="ghost" 
                       size="sm" 
                       onClick={() => {
                         clearData();
-                        setDataPreviewMode(false);
+                        setChartBars([]);
+                        setStockDataLoaded(false);
+                        setOptionsDataLoaded(false);
+                        setAvailableContracts([]);
+                        setSelectedContract('');
+                        setOptionsData(null);
+                        setOptionsError(null);
                       }}
                       className="h-6 px-2 text-xs"
                     >
@@ -374,8 +489,69 @@ const Backtesting = () => {
                     </Button>
                   </div>
                   <p className="text-xs text-green-600 mt-1">
-                    {historicalData.totalBars} bars loaded ({historicalData.dateRange.start} to {historicalData.dateRange.end})
+                    {chartBars.length} bars loaded ({config.startDate} to {config.endDate})
                   </p>
+                </div>
+              )}
+
+              {/* Options Contracts Dropdown */}
+              {optionsDataLoaded && availableContracts.length > 0 && (
+                <div className="mt-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Target className="w-4 h-4 text-blue-500" />
+                      <span className="text-sm font-medium text-blue-500">Options Contracts</span>
+                      <Badge variant="outline" className="text-xs">
+                        {availableContracts.length} contracts
+                      </Badge>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="contract-select" className="text-xs font-medium">
+                      Select Contract to Preview:
+                    </Label>
+                    <select
+                      id="contract-select"
+                      value={selectedContract}
+                      onChange={(e) => setSelectedContract(e.target.value)}
+                      className="w-full px-3 py-2 text-sm bg-background border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      title="Select options contract"
+                    >
+                      <option value="">-- Select Contract --</option>
+                      {availableContracts.map((contract) => {
+                        const barsCount = optionsData?.bars?.[contract]?.length || 0;
+                        return (
+                          <option key={contract} value={contract}>
+                            {contract} ({barsCount} bars)
+                          </option>
+                        );
+                      })}
+                    </select>
+                    
+                    {selectedContract && (
+                      <div className="mt-2 p-2 bg-background/50 rounded border text-xs">
+                        <p className="font-medium text-blue-600">Selected: {selectedContract}</p>
+                        <p className="text-muted-foreground mt-1">
+                          Bars available: {optionsData?.bars?.[selectedContract]?.length || 0}
+                        </p>
+                        <p className="text-muted-foreground">
+                          Contract type: {selectedContract.includes('C') ? 'Call' : selectedContract.includes('P') ? 'Put' : 'Unknown'}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {/* Contract Summary */}
+                    <div className="mt-2 p-2 bg-background/20 rounded border-dashed border text-xs">
+                      <p className="font-medium">Contract Summary:</p>
+                      <div className="grid grid-cols-2 gap-2 mt-1">
+                        <span>Total Contracts: {availableContracts.length}</span>
+                        <span>Total Bars: {optionsData?.totalBars || 0}</span>
+                        <span>Calls: {availableContracts.filter(c => c.includes('C')).length}</span>
+                        <span>Puts: {availableContracts.filter(c => c.includes('P')).length}</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -422,51 +598,24 @@ const Backtesting = () => {
             </div>
 
             {/* Data Preview or Equity Curve */}
-            <div className="h-[300px] bg-background/50 rounded-lg border border-border mb-6 p-4">
-              {dataPreviewMode && historicalData && !results ? (
-                // Data Preview Mode - Show OHLC data
+            <div className="h-[500px] bg-background/50 rounded-lg border border-border mb-6 p-4">
+              {stockDataLoaded && chartBars.length > 0 && !results ? (
+                // Stock Data Chart Mode - TradingView Chart (like Trading tab)
                 <div>
                   <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold">Historical Data Preview</h3>
+                    <h3 className="text-sm font-semibold">Stock Data Chart</h3>
                     <Badge variant="outline">
-                      {historicalData.totalBars} bars loaded
+                      {chartBars.length} bars loaded
                     </Badge>
                   </div>
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={historicalData.bars.slice(-100)}> {/* Last 100 bars for performance */}
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis 
-                        dataKey="time" 
-                        stroke="hsl(var(--muted-foreground))"
-                        tick={{ fontSize: 10 }}
-                      />
-                      <YAxis 
-                        stroke="hsl(var(--muted-foreground))"
-                        tick={{ fontSize: 10 }}
-                      />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px',
-                          fontSize: '12px'
-                        }}
-                        labelFormatter={(label) => `Time: ${label}`}
-                        formatter={(value: number, name: string) => [
-                          `$${value.toFixed(2)}`, 
-                          name.charAt(0).toUpperCase() + name.slice(1)
-                        ]}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="close" 
-                        stroke="hsl(var(--primary))" 
-                        strokeWidth={1.5}
-                        dot={false}
-                        name="close"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  <div className="h-[430px] overflow-hidden w-full">
+                    <LiveTradingViewChart
+                      ref={backtestChartRef}
+                      symbol={config.symbol}
+                      bars={chartBars}
+                      height={430}
+                    />
+                  </div>
                 </div>
               ) : equityCurve.length > 0 ? (
                 // Backtest Results Mode - Show Equity Curve
@@ -509,7 +658,7 @@ const Backtesting = () => {
                   </p>
                   {!historicalData && !dataLoading && (
                     <p className="text-xs text-muted-foreground mt-1 text-center">
-                      Configure your parameters and click "Fetch Historical Data" to get started
+                      Configure your parameters and click "Fetch Data & Generate Options" to automatically load stock data and generate option contracts
                     </p>
                   )}
                 </div>
@@ -517,32 +666,32 @@ const Backtesting = () => {
             </div>
 
             {/* Data Stats or Metrics Grid */}
-            {historicalData && !results && (
+            {stockDataLoaded && chartBars.length > 0 && !results && (
               <div className="grid grid-cols-4 gap-4 mb-6">
                 {[
                   { 
                     label: "Total Bars", 
-                    value: historicalData.totalBars.toLocaleString(), 
+                    value: chartBars.length.toLocaleString(), 
                     positive: null 
                   },
                   { 
                     label: "First Price", 
-                    value: historicalData.bars[0]?.close ? `$${historicalData.bars[0].close.toFixed(2)}` : 'N/A', 
+                    value: chartBars[0]?.close ? `$${chartBars[0].close.toFixed(2)}` : 'N/A', 
                     positive: null 
                   },
                   { 
                     label: "Last Price", 
-                    value: historicalData.bars[historicalData.bars.length - 1]?.close ? 
-                      `$${historicalData.bars[historicalData.bars.length - 1].close.toFixed(2)}` : 'N/A', 
+                    value: chartBars[chartBars.length - 1]?.close ? 
+                      `$${chartBars[chartBars.length - 1].close.toFixed(2)}` : 'N/A', 
                     positive: null 
                   },
                   { 
                     label: "Price Change", 
-                    value: historicalData.bars.length >= 2 && historicalData.bars[0]?.close && historicalData.bars[historicalData.bars.length - 1]?.close ? 
-                      `${((historicalData.bars[historicalData.bars.length - 1].close - historicalData.bars[0].close) / historicalData.bars[0].close * 100).toFixed(2)}%` : 
+                    value: chartBars.length >= 2 && chartBars[0]?.close && chartBars[chartBars.length - 1]?.close ? 
+                      `${((chartBars[chartBars.length - 1].close - chartBars[0].close) / chartBars[0].close * 100).toFixed(2)}%` : 
                       'N/A',
-                    positive: historicalData.bars.length >= 2 && historicalData.bars[0]?.close && historicalData.bars[historicalData.bars.length - 1]?.close ? 
-                      historicalData.bars[historicalData.bars.length - 1].close > historicalData.bars[0].close : 
+                    positive: chartBars.length >= 2 && chartBars[0]?.close && chartBars[chartBars.length - 1]?.close ? 
+                      chartBars[chartBars.length - 1].close > chartBars[0].close : 
                       null
                   },
                 ].map((stat) => (
@@ -570,13 +719,13 @@ const Backtesting = () => {
                   <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
                     <p className="text-sm text-muted-foreground">Total Contracts</p>
                     <p className="text-2xl font-bold mt-1 text-orange-500">
-                      {optionsData.totalSymbols}
+                      {optionsData?.symbolsWithData || 0}
                     </p>
                   </div>
                   <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
                     <p className="text-sm text-muted-foreground">Total Bars</p>
                     <p className="text-2xl font-bold mt-1 text-orange-500">
-                      {optionsData.totalBars.toLocaleString()}
+                      {(optionsData?.totalBars || 0).toLocaleString()}
                     </p>
                   </div>
                 </div>
@@ -585,14 +734,14 @@ const Backtesting = () => {
                 <div className="mt-4 p-3 rounded-lg bg-secondary/30 border border-border">
                   <p className="text-sm font-medium mb-2">Loaded Contracts:</p>
                   <div className="flex flex-wrap gap-2">
-                    {getOptionSymbols().slice(0, 6).map(symbol => (
+                    {availableContracts.slice(0, 6).map(symbol => (
                       <Badge key={symbol} variant="outline" className="text-xs">
                         {symbol}
                       </Badge>
                     ))}
-                    {getOptionSymbols().length > 6 && (
+                    {availableContracts.length > 6 && (
                       <Badge variant="outline" className="text-xs">
-                        +{getOptionSymbols().length - 6} more
+                        +{availableContracts.length - 6} more
                       </Badge>
                     )}
                   </div>
