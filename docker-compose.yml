@@ -1,0 +1,160 @@
+services:
+  # Local PostgreSQL Database (100% Free)
+  database:
+    image: postgres:15-alpine
+    container_name: trading_db
+    environment:
+      POSTGRES_DB: trading_system
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trading123
+      POSTGRES_HOST_AUTH_METHOD: trust
+    ports:
+      - "5433:5432"  # Use port 5433 to avoid conflicts
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Frontend Development Server with Hot Reload
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend/Dockerfile
+    container_name: trading_frontend
+    environment:
+      - VITE_API_BASE_URL=http://localhost:3001
+      - VITE_BACKTESTING_API_URL=http://localhost:3002
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./index.html:/app/index.html
+      - ./package.json:/app/package.json
+      - ./vite.config.ts:/app/vite.config.ts
+      - ./tsconfig.json:/app/tsconfig.json
+      - ./tailwind.config.ts:/app/tailwind.config.ts
+      - ./postcss.config.js:/app/postcss.config.js
+      - /app/node_modules  # Prevent node_modules from being overwritten
+    command: npm run dev -- --host 0.0.0.0 --port 8080
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Local API Server with Hot Reload (replaces Supabase Edge Functions)
+  api_server:
+    build:
+      context: ./docker/api-server
+      dockerfile: Dockerfile.dev
+    container_name: trading_api
+    env_file:
+      - .env.docker
+    environment:
+      DATABASE_URL: postgresql://trader:trading123@database:5432/trading_system
+      PORT: 3001
+      NODE_ENV: development
+    ports:
+      - "3001:3001"
+    depends_on:
+      - database
+    volumes:
+      - ./docker/api-server:/app
+      - /app/node_modules  # Prevent node_modules from being overwritten
+      - ./data:/app/data  # Mount data directory to persist CSV files
+    command: npm run dev
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Backtesting Server with Hot Reload
+  backtesting_server:
+    build:
+      context: ./docker/backtesting-server
+      dockerfile: Dockerfile.dev
+    container_name: trading_backtest
+    env_file:
+      - .env.docker
+    environment:
+      PORT: 3002
+      NODE_ENV: development
+      DATABASE_URL: postgresql://trader:trading123@database:5432/trading_system
+    ports:
+      - "3002:3002"
+    depends_on:
+      - database
+    volumes:
+      - ./docker/backtesting-server:/app
+      - /app/node_modules  # Prevent node_modules from being overwritten
+      - ./data:/app/data  # Mount data directory for backtesting data
+      - ./options_backtester:/app/options_backtester  # Mount Python backtester
+    command: npm run dev
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Redis for WebSocket Session Management
+  redis:
+    image: redis:7-alpine
+    container_name: trading_redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Options Data Service (dedicated for IWM/SPY/QQQ)
+  options_data_service:
+    build:
+      context: ./docker/options-data-service
+      dockerfile: Dockerfile.dev
+    container_name: trading_options_data
+    environment:
+      PORT: 3003
+      NODE_ENV: development
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "3003:3003"
+    depends_on:
+      - redis
+    volumes:
+      - ./docker/options-data-service:/app
+      - /app/node_modules
+      - ./data:/app/data
+    command: npm run dev
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Data Bus Manager - Central hub for all market data
+  data_bus_manager:
+    build:
+      context: ./docker/data-bus-manager
+      dockerfile: Dockerfile
+    container_name: trading_data_bus
+    env_file:
+      - .env.docker
+    environment:
+      PORT: 3004
+      NODE_ENV: development
+      DATABASE_URL: postgresql://trader:trading123@database:5432/trading_system
+    ports:
+      - "3004:3004"
+    depends_on:
+      - database
+      - redis
+    volumes:
+      - ./docker/data-bus-manager:/app
+      - /app/node_modules
+    command: npm run dev
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+volumes:
+  postgres_data:
+
+networks:
+  trading-network:
+    driver: bridge

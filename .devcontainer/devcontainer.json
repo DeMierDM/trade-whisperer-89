@@ -1,0 +1,64 @@
+{
+  "name": "Trade Whisperer Development",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "codespace-dev",
+  "workspaceFolder": "/workspace",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "18"
+    },
+    "ghcr.io/devcontainers/features/git:1": {}
+  },
+  "forwardPorts": [
+    8080,
+    3001,
+    3002,
+    3003,
+    3004,
+    5432,
+    6379
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "Frontend (React)",
+      "onAutoForward": "openBrowser"
+    },
+    "3001": {
+      "label": "Trading API"
+    },
+    "3002": {
+      "label": "Backtesting API"
+    },
+    "3003": {
+      "label": "Options Data API"
+    },
+    "3004": {
+      "label": "Data Bus WebSocket"
+    },
+    "5432": {
+      "label": "PostgreSQL"
+    },
+    "6379": {
+      "label": "Redis"
+    }
+  },
+  "postCreateCommand": "npm install",
+  "postStartCommand": "docker-compose up -d && npm run dev",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.vscode-typescript-next",
+        "bradlc.vscode-tailwindcss",
+        "esbenp.prettier-vscode",
+        "ms-vscode.vscode-json",
+        "ms-azuretools.vscode-docker"
+      ],
+      "settings": {
+        "typescript.preferences.quoteStyle": "double",
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+      }
+    }
+  }
+}

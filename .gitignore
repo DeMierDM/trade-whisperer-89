@@ -1,0 +1,55 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Build artifacts and large files
+release/
+build/
+out/
+*.dmg
+*.exe
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+*.app
+*.asar
+
+# Large data files and backtest results
+docker/backtesting-server/data/backtests/
+*.csv
+data/
+debug-screenshot.png
+electron-ui-test.png
+*.png
+*.jpg
+*.jpeg
+
+# Temporary and test files
+test-*.cjs
+test-*.js
+*-test.cjs
+*-test.js
+debug-*.html
+pure-websocket-test.html
