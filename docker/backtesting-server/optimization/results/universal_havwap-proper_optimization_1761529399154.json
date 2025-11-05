@@ -1,0 +1,122 @@
+{
+  "optimization_info": {
+    "strategy": "havwap-proper",
+    "symbol": "SPY",
+    "train_period": "2024-10-01 to 2024-10-05",
+    "valid_period": "2024-10-06 to 2024-10-08",
+    "max_trials": 3,
+    "completed_trials": 3,
+    "duration_minutes": 0.001935863494873047,
+    "timestamp": "2025-10-27T01:43:19.155745",
+    "optimizer_type": "Universal Auto-Detection"
+  },
+  "best_result": {
+    "score": 0.001,
+    "parameters": {
+      "d_entry": 0.003531384557709862,
+      "d_near": 0.009198464809761773,
+      "s_min": 0.0012412399667949617,
+      "rv_cap": 0.0971041315772091,
+      "iv_chg_cap": 0.04578019127905531,
+      "theta_imb": 0.19484829444575835,
+      "deltaTargetReversion": 0.2007270777928601,
+      "deltaTargetTrend": 0.29472585130494344,
+      "maxSpreadPct": 7.366287645242614,
+      "preferredDTE": 0.1385422655916862,
+      "profitTargetReversion": 0.3075739543230017,
+      "stopLossReversion": 0.14861957410402538,
+      "timeStopReversion": 168,
+      "profitTargetTrend": 0.2601763924900564,
+      "stopLossTrend": 0.29289069693187636,
+      "timeStopTrend": 666,
+      "zeroDTECloseTime": 43,
+      "maxPositions": 0.3974097022626064,
+      "contractsPerTrade": 0.4772756891857992,
+      "minVolume": 12
+    },
+    "target_achieved": false
+  },
+  "all_trials": [
+    {
+      "number": 0,
+      "value": 0.001,
+      "params": {
+        "d_entry": 0.003531384557709862,
+        "d_near": 0.009198464809761773,
+        "s_min": 0.0012412399667949617,
+        "rv_cap": 0.0971041315772091,
+        "iv_chg_cap": 0.04578019127905531,
+        "theta_imb": 0.19484829444575835,
+        "deltaTargetReversion": 0.2007270777928601,
+        "deltaTargetTrend": 0.29472585130494344,
+        "maxSpreadPct": 7.366287645242614,
+        "preferredDTE": 0.1385422655916862,
+        "profitTargetReversion": 0.3075739543230017,
+        "stopLossReversion": 0.14861957410402538,
+        "timeStopReversion": 168,
+        "profitTargetTrend": 0.2601763924900564,
+        "stopLossTrend": 0.29289069693187636,
+        "timeStopTrend": 666,
+        "zeroDTECloseTime": 43,
+        "maxPositions": 0.3974097022626064,
+        "contractsPerTrade": 0.4772756891857992,
+        "minVolume": 12
+      },
+      "state": "COMPLETE"
+    },
+    {
+      "number": 1,
+      "value": 0.001,
+      "params": {
+        "d_entry": 0.009960844397093598,
+        "d_near": 0.0016819504985298877,
+        "s_min": 0.0049128222739300755,
+        "rv_cap": 0.021150779201221683,
+        "iv_chg_cap": 0.023828848686942915,
+        "theta_imb": 0.29302505688597924,
+        "deltaTargetReversion": 0.6144448014286675,
+        "deltaTargetTrend": 0.44741007718168946,
+        "maxSpreadPct": 44.77050681370458,
+        "preferredDTE": 0.23095211734149745,
+        "profitTargetReversion": 0.3308962077252581,
+        "stopLossReversion": 0.1486483852468768,
+        "timeStopReversion": 1223,
+        "profitTargetTrend": 0.2151347056549378,
+        "stopLossTrend": 0.27938668318385085,
+        "timeStopTrend": 412,
+        "zeroDTECloseTime": 35,
+        "maxPositions": 0.2516076826723246,
+        "contractsPerTrade": 0.2515116909061746,
+        "minVolume": 16
+      },
+      "state": "COMPLETE"
+    },
+    {
+      "number": 2,
+      "value": 0.001,
+      "params": {
+        "d_entry": 0.006084040528963148,
+        "d_near": 0.0011360632556197887,
+        "s_min": 0.0036794726671442344,
+        "rv_cap": 0.0017052828179415064,
+        "iv_chg_cap": 0.04378251693747792,
+        "theta_imb": 0.4487123302418613,
+        "deltaTargetReversion": 0.42484477943382315,
+        "deltaTargetTrend": 0.2783068655788397,
+        "maxSpreadPct": 45.96491515773534,
+        "preferredDTE": 0.19706502765749417,
+        "profitTargetReversion": 0.420762215915346,
+        "stopLossReversion": 0.1572586889774796,
+        "timeStopReversion": 489,
+        "profitTargetTrend": 0.4790837026424487,
+        "stopLossTrend": 0.07972302285920937,
+        "timeStopTrend": 828,
+        "zeroDTECloseTime": 16,
+        "maxPositions": 0.3893179843211578,
+        "contractsPerTrade": 0.3768216569236005,
+        "minVolume": 18
+      },
+      "state": "COMPLETE"
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+FROM node:18-alpine
+
+WORKDIR /app
+
+# Copy package files for dependency installation
+COPY package*.json ./
+
+# Install dependencies including nodemon for development
+RUN npm install
+
+# Copy source code
+COPY . .
+
+# Expose port
+EXPOSE 3003
+
+# Start development server with nodemon hot reload
+CMD ["npm", "run", "dev"]

@@ -1,0 +1,168 @@
+{
+  "config": {
+    "optimizationType": "random",
+    "maxIterations": 5,
+    "startDate": "2024-10-21",
+    "endDate": "2024-10-21",
+    "symbols": [
+      "SPY"
+    ],
+    "initialCapital": 10000,
+    "maxPositions": 1,
+    "contracts": 1,
+    "primaryMetric": "sharpe_ratio",
+    "minTrades": 5,
+    "maxDrawdown": 0.2
+  },
+  "best_parameters": {
+    "d_entry": 0.0005,
+    "d_near": 0.0008,
+    "s_min": 0.00005,
+    "rv_cap": 0.006,
+    "profitTargetReversion": 0.15,
+    "stopLossReversion": 0.14,
+    "timeStopReversion": 240,
+    "profitTargetTrend": 0.33,
+    "stopLossTrend": 0.16,
+    "timeStopTrend": 180
+  },
+  "best_score": 0.001,
+  "all_results": [
+    {
+      "test_number": 1,
+      "parameters": {
+        "d_entry": 0.0005,
+        "d_near": 0.0008,
+        "s_min": 0.00005,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 240,
+        "profitTargetTrend": 0.33,
+        "stopLossTrend": 0.16,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 1,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "validity_score": 0
+      },
+      "score": 0.001,
+      "successful_backtests": 0,
+      "total_backtests": 1
+    },
+    {
+      "test_number": 2,
+      "parameters": {
+        "d_entry": 0.002,
+        "d_near": 0.0008,
+        "s_min": 0.00025,
+        "rv_cap": 0.005,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.1,
+        "timeStopReversion": 240,
+        "profitTargetTrend": 0.33,
+        "stopLossTrend": 0.18,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 1,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "validity_score": 0
+      },
+      "score": 0.001,
+      "successful_backtests": 0,
+      "total_backtests": 1
+    },
+    {
+      "test_number": 3,
+      "parameters": {
+        "d_entry": 0.003,
+        "d_near": 0.0008,
+        "s_min": 0.00030000000000000003,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.08,
+        "timeStopReversion": 240,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.1,
+        "timeStopTrend": 300
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 1,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "validity_score": 0
+      },
+      "score": 0.001,
+      "successful_backtests": 0,
+      "total_backtests": 1
+    },
+    {
+      "test_number": 4,
+      "parameters": {
+        "d_entry": 0.001,
+        "d_near": 0.001,
+        "s_min": 0.00015000000000000001,
+        "rv_cap": 0.003,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.08,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.33,
+        "stopLossTrend": 0.12000000000000001,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 1,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "validity_score": 0
+      },
+      "score": 0.001,
+      "successful_backtests": 0,
+      "total_backtests": 1
+    },
+    {
+      "test_number": 5,
+      "parameters": {
+        "d_entry": 0.003,
+        "d_near": 0.0004,
+        "s_min": 0.00015000000000000001,
+        "rv_cap": 0.005,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.12,
+        "timeStopReversion": 120,
+        "profitTargetTrend": 0.22999999999999998,
+        "stopLossTrend": 0.16,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 1,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "validity_score": 0
+      },
+      "score": 0.001,
+      "successful_backtests": 0,
+      "total_backtests": 1
+    }
+  ],
+  "timestamp": "2025-10-27T00:51:13.604Z"
+}

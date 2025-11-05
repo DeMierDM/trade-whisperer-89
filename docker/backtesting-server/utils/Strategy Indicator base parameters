@@ -1,0 +1,77 @@
+Core trend / moving averages / bands
+Indicator	Param	Min	Max	Step	Sample
+SMA/EMA/WMAs	period	3	400	int	log-uniform (short/long both)
+EMA α	alpha	0.02	0.5	0.01	uniform
+Hull MA	period	6	200	int	log-uniform
+ZLEMA	period	5	200	int	log-uniform
+VWAP band	% from VWAP	0.0003	0.01	—	log-uniform
+Anchored VWAP	anchors/day	1	8	int	uniform
+Bollinger	period	10	60	int	uniform
+	stdev mult	1.0	3.5	0.1	uniform
+Keltner	ema period	10	60	int	uniform
+	ATR mult	1.0	3.0	0.1	uniform
+Donchian	channel length	10	100	int	log-uniform
+Supertrend	ATR period	5	21	int	uniform
+	factor	1.5	5.0	0.1	uniform
+Ichimoku	Tenkan	5	18	int	uniform
+	Kijun	20	60	int	uniform
+	Senkou B	40	120	int	uniform
+Momentum / oscillators
+Indicator	Param	Min	Max	Step	Sample
+RSI	length	2	30	int	log-uniform (bias to 2–14)
+	overbought	70	95	1	uniform
+	oversold	5	30	1	uniform
+Stochastic	%K	3	21	int	uniform
+	%D	3	21	int	uniform
+	OB/OS	70/30	95/5	—	uniform
+StochRSI	length	5	30	int	uniform
+MACD	fast	3	20	int	log-uniform
+	slow	8	50	int	log-uniform (constrain slow>fast)
+	signal	3	15	int	uniform
+ROC (mom%)	period	1	30	int	log-uniform
+CCI	length	10	40	int	uniform
+Williams %R	length	5	30	int	uniform
+Momentum	period	2	30	int	log-uniform
+PPO	fast/slow/signal	MACD-like ranges	—	—	same as MACD
+Volatility / stops / risk
+Metric	Param	Min	Max	Step	Sample
+ATR	period	5	21	int	uniform
+	stop mult	0.8	4.0	0.1	uniform
+Realized vol	window (s or bars)	60	1800	int	log-uniform
+RV cap (as %)	fraction	0.002	0.02	—	log-uniform
+Time stop	seconds	30	1800	15	log-uniform
+Trail stop	%	0.002	0.05	—	log-uniform
+Break-even shift	%	0.002	0.03	—	uniform
+Volume / order-flow / microstructure
+Metric	Param	Min	Max	Step	Sample
+Volume MA	period	5	60	int	uniform
+Relative Volume	window	5	30	int	uniform
+Vol spike z-score	z	1.0	4.0	0.1	uniform
+Imbalance	buy % threshold	0.55	0.80	0.01	uniform
+Cumulative Delta	smooth len	5	120	int	log-uniform
+OBV	smooth len	5	60	int	uniform
+Max spread	$	0.01	0.10	0.005	uniform
+Quote age	seconds	0.2	2.0	0.1	uniform
+Min tick rate	trades/sec	1	50	int	log-uniform
+Trend/structure filters
+Filter	Param	Min	Max	Step	Sample
+Slope (price/MA/VWAP)	per-sec	1e-6	1e-3	—	log-uniform
+Distance to ref	%	0.0003	0.02	—	log-uniform
+Sustain time	seconds	5	120	5	uniform
+Reg. slope window	bars	10	200	int	log-uniform
+Breakout lookback	bars	5	100	int	log-uniform
+Options overlays (if applicable)
+Metric	Param	Min	Max	Step	Sample
+Delta target	Δ	0.30	0.70	0.01	uniform
+Gamma min	Γ	0.03	0.20	0.01	uniform
+Theta max	%/min	0.10	0.50	0.01	uniform
+IV rank filter	0–100	10	90	1	uniform
+Bid/ask spread cap	$	0.01	0.10	0.005	uniform
+Min OI	contracts	50	2000	int	log-uniform
+Governance / meta
+Param	Min	Max	Step	Sample
+Risk per trade (% equity)	0.001	0.02	—	log-uniform
+Max daily loss (% eq)	0.03	0.25	—	uniform
+Max trades/day	1	20	1	uniform
+Session cutoffs (ET)	9:31	15:55	1 min	uniform
+Confidence threshold (AI)	0.6	0.99	0.01	uniform

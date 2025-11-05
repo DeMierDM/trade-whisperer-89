@@ -1,0 +1,79 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    /* Trading Terminal Theme - Professional Dark */
+    --background: 220 20% 8%;
+    --foreground: 210 20% 98%;
+
+    --card: 220 18% 10%;
+    --card-foreground: 210 20% 98%;
+
+    --popover: 220 20% 12%;
+    --popover-foreground: 210 20% 98%;
+
+    --primary: 217 91% 60%;
+    --primary-foreground: 220 20% 8%;
+
+    --secondary: 220 15% 15%;
+    --secondary-foreground: 210 20% 98%;
+
+    --muted: 220 15% 18%;
+    --muted-foreground: 215 15% 60%;
+
+    --accent: 45 93% 58%;
+    --accent-foreground: 220 20% 8%;
+
+    /* Financial Colors */
+    --success: 142 76% 45%;
+    --success-foreground: 220 20% 8%;
+    
+    --danger: 0 84% 60%;
+    --danger-foreground: 210 20% 98%;
+
+    --warning: 38 92% 58%;
+    --warning-foreground: 220 20% 8%;
+
+    --info: 199 89% 48%;
+    --info-foreground: 220 20% 8%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 20% 98%;
+
+    --border: 220 15% 20%;
+    --input: 220 15% 18%;
+    --ring: 217 91% 60%;
+
+    --radius: 0.5rem;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(217 91% 60%), hsl(240 91% 70%));
+    --gradient-success: linear-gradient(135deg, hsl(142 76% 45%), hsl(142 76% 55%));
+    --gradient-danger: linear-gradient(135deg, hsl(0 84% 60%), hsl(0 84% 70%));
+    --gradient-card: linear-gradient(180deg, hsl(220 18% 12%), hsl(220 18% 10%));
+
+    /* Shadows */
+    --shadow-glow: 0 0 20px hsl(217 91% 60% / 0.3);
+    --shadow-card: 0 4px 12px hsl(220 20% 4% / 0.5);
+    --shadow-elevated: 0 8px 24px hsl(220 20% 4% / 0.6);
+
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}

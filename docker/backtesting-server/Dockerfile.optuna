@@ -1,0 +1,15 @@
+# Dockerfile additions for Python Optuna support
+# Add this to your existing Dockerfile
+
+# Install Python and pip
+RUN apk add --no-cache python3 py3-pip python3-dev
+
+# Create Python optimization directory
+WORKDIR /app
+COPY python_optuna/ /app/python_optuna/
+
+# Install Python dependencies for Optuna
+RUN pip3 install -r /app/python_optuna/requirements.txt
+
+# Make Python script executable
+RUN chmod +x /app/python_optuna/optuna_optimizer.py

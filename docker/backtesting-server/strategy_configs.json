@@ -1,0 +1,261 @@
+{
+  "havwap-proper": {
+    "strategy_name": "havwap-proper",
+    "parameters": {
+      "d_entry": {
+        "min": 1e-05,
+        "max": 0.05,
+        "type": "float",
+        "default": null
+      },
+      "d_near": {
+        "min": 1e-05,
+        "max": 0.05,
+        "type": "float",
+        "default": null
+      },
+      "s_min": {
+        "min": 1e-06,
+        "max": 0.05,
+        "type": "float",
+        "default": null
+      },
+      "rv_cap": {
+        "min": 0.0001,
+        "max": 0.2,
+        "type": "float",
+        "default": null
+      },
+      "iv_chg_cap": {
+        "min": 0.0001,
+        "max": 0.2,
+        "type": "float",
+        "default": null
+      },
+      "theta_imb": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": 0.67
+      },
+      "deltaTargetReversion": {
+        "min": 0.05,
+        "max": 0.95,
+        "type": "float",
+        "default": null
+      },
+      "deltaTargetTrend": {
+        "min": 0.05,
+        "max": 0.95,
+        "type": "float",
+        "default": null
+      },
+      "maxSpreadPct": {
+        "min": 0.5,
+        "max": 75.0,
+        "type": "float",
+        "default": null
+      },
+      "preferredDTE": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": 0.0
+      },
+      "profitTargetReversion": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": null
+      },
+      "stopLossReversion": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": null
+      },
+      "timeStopReversion": {
+        "min": 5,
+        "max": 3600,
+        "type": "int",
+        "default": null
+      },
+      "profitTargetTrend": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": null
+      },
+      "stopLossTrend": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": null
+      },
+      "timeStopTrend": {
+        "min": 5,
+        "max": 3600,
+        "type": "int",
+        "default": null
+      },
+      "zeroDTECloseTime": {
+        "min": 2,
+        "max": 100,
+        "type": "int",
+        "default": null
+      },
+      "maxPositions": {
+        "min": 1,
+        "max": 3,
+        "type": "int",
+        "default": null
+      },
+      "contractsPerTrade": {
+        "min": 1,
+        "max": 350,
+        "type": "int",
+        "default": null
+      },
+      "minVolume": {
+        "min": 1,
+        "max": 500,
+        "type": "int",
+        "default": 1.0
+      },
+      "currentPositions": {
+        "min": 1,
+        "max": 350,
+        "type": "int",
+        "default": null
+      }
+    },
+    "file_path": "/app/strategies/havwap-proper.js"
+  },
+  "rsi-roc-vwap-confluence": {
+    "strategy_name": "rsi-roc-vwap-confluence",
+    "parameters": {},
+    "file_path": "/app/strategies/rsi-roc-vwap-confluence.js"
+  },
+  "havwap-optimized": {
+    "strategy_name": "havwap-optimized",
+    "parameters": {},
+    "file_path": "/app/strategies/havwap-optimized.js"
+  },
+  "vwap-execution-adaptive": {
+    "strategy_name": "vwap-execution-adaptive",
+    "parameters": {},
+    "file_path": "/app/strategies/vwap-execution-adaptive.js"
+  },
+  "strategy-template": {
+    "strategy_name": "strategy-template",
+    "parameters": {
+      "Example": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float"
+      }
+    },
+    "file_path": "/app/strategies/strategy-template.js"
+  },
+  "havwap-options": {
+    "strategy_name": "havwap-options",
+    "parameters": {
+      "vwapPeriod": {
+        "min": 1,
+        "max": 60,
+        "type": "int",
+        "default": null
+      },
+      "slopeThreshold": {
+        "min": 1e-06,
+        "max": 0.05,
+        "type": "float",
+        "default": null
+      },
+      "slopeLookback": {
+        "min": 1e-06,
+        "max": 0.05,
+        "type": "float",
+        "default": null
+      },
+      "priceVwapThreshold": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": 0.0005
+      },
+      "deltaTarget": {
+        "min": 0.05,
+        "max": 0.95,
+        "type": "float",
+        "default": null
+      },
+      "maxSpreadPct": {
+        "min": 0.5,
+        "max": 75.0,
+        "type": "float",
+        "default": null
+      },
+      "preferredDTE": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": 0.0
+      },
+      "profitTarget": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": null
+      },
+      "stopLoss": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float",
+        "default": null
+      },
+      "maxHoldingPeriod": {
+        "min": 1,
+        "max": 60,
+        "type": "int",
+        "default": null
+      },
+      "zeroDTECloseTime": {
+        "min": 2,
+        "max": 100,
+        "type": "int",
+        "default": null
+      },
+      "maxPositions": {
+        "min": 1,
+        "max": 3,
+        "type": "int",
+        "default": null
+      },
+      "contractsPerTrade": {
+        "min": 1,
+        "max": 350,
+        "type": "int",
+        "default": null
+      },
+      "minVolume": {
+        "min": 1,
+        "max": 500,
+        "type": "int",
+        "default": 1.0
+      },
+      "currentPositions": {
+        "min": 1,
+        "max": 350,
+        "type": "int",
+        "default": null
+      },
+      "RELAXED": {
+        "min": 0.001,
+        "max": 0.5,
+        "type": "float"
+      }
+    },
+    "file_path": "/app/strategies/havwap-options.js"
+  }
+}

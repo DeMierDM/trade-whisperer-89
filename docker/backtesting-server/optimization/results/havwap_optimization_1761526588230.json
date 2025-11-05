@@ -1,0 +1,559 @@
+{
+  "config": {
+    "strategyName": "HAVWAP",
+    "maxIterations": 25,
+    "startDate": "2024-10-21",
+    "endDate": "2024-10-25",
+    "symbols": [
+      "SPY"
+    ],
+    "primaryMetric": "sharpe_ratio",
+    "earlyStopping": true,
+    "initialCapital": 10000,
+    "maxPositions": 1,
+    "contracts": 1
+  },
+  "results": [
+    {
+      "iteration": 1,
+      "parameters": {
+        "d_entry": 0.0025,
+        "d_near": 0.0002,
+        "s_min": 0.0002,
+        "rv_cap": 0.004,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.08,
+        "timeStopReversion": 120,
+        "profitTargetTrend": 0.28,
+        "stopLossTrend": 0.1,
+        "timeStopTrend": 240
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.172Z"
+    },
+    {
+      "iteration": 2,
+      "parameters": {
+        "d_entry": 0.001,
+        "d_near": 0.0002,
+        "s_min": 0.0002,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.25,
+        "stopLossReversion": 0.1,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.28,
+        "stopLossTrend": 0.14,
+        "timeStopTrend": 360
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.175Z"
+    },
+    {
+      "iteration": 3,
+      "parameters": {
+        "d_entry": 0.0025,
+        "d_near": 0.001,
+        "s_min": 0.00025,
+        "rv_cap": 0.003,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.28,
+        "stopLossTrend": 0.2,
+        "timeStopTrend": 240
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.178Z"
+    },
+    {
+      "iteration": 4,
+      "parameters": {
+        "d_entry": 0.0005,
+        "d_near": 0.0002,
+        "s_min": 0.00005,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 240,
+        "profitTargetTrend": 0.22999999999999998,
+        "stopLossTrend": 0.16,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.181Z"
+    },
+    {
+      "iteration": 5,
+      "parameters": {
+        "d_entry": 0.0015,
+        "d_near": 0.0008,
+        "s_min": 0.0002,
+        "rv_cap": 0.007,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.1,
+        "timeStopReversion": 120,
+        "profitTargetTrend": 0.28,
+        "stopLossTrend": 0.12000000000000001,
+        "timeStopTrend": 240
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.185Z"
+    },
+    {
+      "iteration": 6,
+      "parameters": {
+        "d_entry": 0.002,
+        "d_near": 0.0006000000000000001,
+        "s_min": 0.00005,
+        "rv_cap": 0.005,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.12,
+        "timeStopReversion": 240,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.1,
+        "timeStopTrend": 360
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.187Z"
+    },
+    {
+      "iteration": 7,
+      "parameters": {
+        "d_entry": 0.001,
+        "d_near": 0.0002,
+        "s_min": 0.00025,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.22999999999999998,
+        "stopLossTrend": 0.1,
+        "timeStopTrend": 240
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.190Z"
+    },
+    {
+      "iteration": 8,
+      "parameters": {
+        "d_entry": 0.0005,
+        "d_near": 0.0002,
+        "s_min": 0.0002,
+        "rv_cap": 0.003,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.12,
+        "timeStopReversion": 180,
+        "profitTargetTrend": 0.28,
+        "stopLossTrend": 0.2,
+        "timeStopTrend": 240
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.193Z"
+    },
+    {
+      "iteration": 9,
+      "parameters": {
+        "d_entry": 0.0015,
+        "d_near": 0.0006000000000000001,
+        "s_min": 0.0002,
+        "rv_cap": 0.004,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.08,
+        "timeStopReversion": 240,
+        "profitTargetTrend": 0.28,
+        "stopLossTrend": 0.18,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.196Z"
+    },
+    {
+      "iteration": 10,
+      "parameters": {
+        "d_entry": 0.001,
+        "d_near": 0.001,
+        "s_min": 0.0002,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.25,
+        "stopLossReversion": 0.12,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.33,
+        "stopLossTrend": 0.2,
+        "timeStopTrend": 300
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.198Z"
+    },
+    {
+      "iteration": 11,
+      "parameters": {
+        "d_entry": 0.0025,
+        "d_near": 0.0004,
+        "s_min": 0.00015000000000000001,
+        "rv_cap": 0.007,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.08,
+        "timeStopReversion": 240,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.2,
+        "timeStopTrend": 300
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.202Z"
+    },
+    {
+      "iteration": 12,
+      "parameters": {
+        "d_entry": 0.0015,
+        "d_near": 0.0006000000000000001,
+        "s_min": 0.00015000000000000001,
+        "rv_cap": 0.005,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 180,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.14,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.204Z"
+    },
+    {
+      "iteration": 13,
+      "parameters": {
+        "d_entry": 0.0015,
+        "d_near": 0.0002,
+        "s_min": 0.00005,
+        "rv_cap": 0.007,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.1,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.2,
+        "timeStopTrend": 240
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.207Z"
+    },
+    {
+      "iteration": 14,
+      "parameters": {
+        "d_entry": 0.0005,
+        "d_near": 0.0002,
+        "s_min": 0.0002,
+        "rv_cap": 0.005,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.1,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.18,
+        "timeStopTrend": 300
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.210Z"
+    },
+    {
+      "iteration": 15,
+      "parameters": {
+        "d_entry": 0.001,
+        "d_near": 0.0004,
+        "s_min": 0.0001,
+        "rv_cap": 0.004,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.12000000000000001,
+        "timeStopTrend": 240
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.213Z"
+    },
+    {
+      "iteration": 16,
+      "parameters": {
+        "d_entry": 0.0005,
+        "d_near": 0.0008,
+        "s_min": 0.0001,
+        "rv_cap": 0.007,
+        "profitTargetReversion": 0.25,
+        "stopLossReversion": 0.08,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.22999999999999998,
+        "stopLossTrend": 0.2,
+        "timeStopTrend": 360
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.216Z"
+    },
+    {
+      "iteration": 17,
+      "parameters": {
+        "d_entry": 0.001,
+        "d_near": 0.0004,
+        "s_min": 0.00005,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.12,
+        "timeStopReversion": 300,
+        "profitTargetTrend": 0.22999999999999998,
+        "stopLossTrend": 0.18,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.218Z"
+    },
+    {
+      "iteration": 18,
+      "parameters": {
+        "d_entry": 0.0015,
+        "d_near": 0.0006000000000000001,
+        "s_min": 0.0001,
+        "rv_cap": 0.004,
+        "profitTargetReversion": 0.15,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 120,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.1,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.221Z"
+    },
+    {
+      "iteration": 19,
+      "parameters": {
+        "d_entry": 0.0005,
+        "d_near": 0.001,
+        "s_min": 0.00025,
+        "rv_cap": 0.005,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.08,
+        "timeStopReversion": 180,
+        "profitTargetTrend": 0.22999999999999998,
+        "stopLossTrend": 0.16,
+        "timeStopTrend": 360
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.224Z"
+    },
+    {
+      "iteration": 20,
+      "parameters": {
+        "d_entry": 0.0015,
+        "d_near": 0.0002,
+        "s_min": 0.00005,
+        "rv_cap": 0.006,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 120,
+        "profitTargetTrend": 0.28,
+        "stopLossTrend": 0.12000000000000001,
+        "timeStopTrend": 180
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.227Z"
+    },
+    {
+      "iteration": 21,
+      "parameters": {
+        "d_entry": 0.0025,
+        "d_near": 0.001,
+        "s_min": 0.00025,
+        "rv_cap": 0.003,
+        "profitTargetReversion": 0.2,
+        "stopLossReversion": 0.14,
+        "timeStopReversion": 120,
+        "profitTargetTrend": 0.18,
+        "stopLossTrend": 0.2,
+        "timeStopTrend": 300
+      },
+      "metrics": {
+        "total_return": 0,
+        "sharpe_ratio": 0,
+        "max_drawdown": 0,
+        "profit_factor": 0,
+        "win_rate": 0,
+        "total_trades": 0
+      },
+      "score": 0.001,
+      "timestamp": "2025-10-27T00:56:28.230Z"
+    }
+  ],
+  "bestParams": {
+    "d_entry": 0.0025,
+    "d_near": 0.0002,
+    "s_min": 0.0002,
+    "rv_cap": 0.004,
+    "profitTargetReversion": 0.15,
+    "stopLossReversion": 0.08,
+    "timeStopReversion": 120,
+    "profitTargetTrend": 0.28,
+    "stopLossTrend": 0.1,
+    "timeStopTrend": 240
+  },
+  "bestScore": 0.001,
+  "totalIterations": 21,
+  "timestamp": "2025-10-27T00:56:28.243Z",
+  "isFinal": true
+}

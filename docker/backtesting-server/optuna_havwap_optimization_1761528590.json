@@ -1,0 +1,132 @@
+{
+  "config": {
+    "strategy": "HAVWAP",
+    "symbol": "SPY",
+    "train_start": "2024-10-01",
+    "train_end": "2024-10-05",
+    "valid_start": "2024-10-06",
+    "valid_end": "2024-10-08",
+    "max_trials": 5,
+    "initial_capital": 10000
+  },
+  "optimization_summary": {
+    "method": "Optuna TPE (Tree-structured Parzen Estimator)",
+    "total_trials": 5,
+    "best_score": 0.062183211451737275,
+    "best_params": {
+      "d_entry": 1.7295042530457105,
+      "d_near": 4.531921835610254,
+      "s_min": 0.44903943353658105,
+      "rv_cap": 1.1844834381628044,
+      "profitTargetReversion": 8.072505169676207,
+      "profitTargetTrend": 6.293038443515803,
+      "stopLossReversion": 5.920882236786076,
+      "stopLossTrend": 2.656910592999737,
+      "timeStopReversion": 1984,
+      "timeStopTrend": 1673
+    },
+    "duration_minutes": 0.33464298248291013,
+    "target_sharpe": 2.0,
+    "target_achieved": false,
+    "timestamp": "2025-10-27T01:29:50.207923"
+  },
+  "all_trials": [
+    {
+      "trial_number": 0,
+      "params": {
+        "d_entry": 7.078518302418525,
+        "d_near": 7.164593269246006,
+        "s_min": 6.3526319955574495,
+        "rv_cap": 15.393816815134842,
+        "profitTargetReversion": 7.436415506961057,
+        "profitTargetTrend": 2.8830192820086245,
+        "stopLossReversion": 0.914602827761335,
+        "stopLossTrend": 3.7861604676256935,
+        "timeStopReversion": 126,
+        "timeStopTrend": 1023
+      },
+      "value": 0.001,
+      "state": "COMPLETE"
+    },
+    {
+      "trial_number": 1,
+      "params": {
+        "d_entry": 8.6126011524562,
+        "d_near": 8.15006002735498,
+        "s_min": 6.517575711425145,
+        "rv_cap": 10.65776517299759,
+        "profitTargetReversion": 7.8345224744231565,
+        "profitTargetTrend": 7.309447743218449,
+        "stopLossReversion": 4.907739908098012,
+        "stopLossTrend": 1.3202577060523535,
+        "timeStopReversion": 2008,
+        "timeStopTrend": 1432
+      },
+      "value": 0.001,
+      "state": "COMPLETE"
+    },
+    {
+      "trial_number": 2,
+      "params": {
+        "d_entry": 2.2379537667851404,
+        "d_near": 1.4893380156356495,
+        "s_min": 7.408457236018399,
+        "rv_cap": 5.464756681481948,
+        "profitTargetReversion": 2.5950403802096367,
+        "profitTargetTrend": 6.388075107978609,
+        "stopLossReversion": 0.06631934074116774,
+        "stopLossTrend": 2.784429125008905,
+        "timeStopReversion": 781,
+        "timeStopTrend": 1964
+      },
+      "value": 0.014073736732030495,
+      "state": "COMPLETE"
+    },
+    {
+      "trial_number": 3,
+      "params": {
+        "d_entry": 1.7295042530457105,
+        "d_near": 4.531921835610254,
+        "s_min": 0.44903943353658105,
+        "rv_cap": 1.1844834381628044,
+        "profitTargetReversion": 8.072505169676207,
+        "profitTargetTrend": 6.293038443515803,
+        "stopLossReversion": 5.920882236786076,
+        "stopLossTrend": 2.656910592999737,
+        "timeStopReversion": 1984,
+        "timeStopTrend": 1673
+      },
+      "value": 0.062183211451737275,
+      "state": "COMPLETE"
+    },
+    {
+      "trial_number": 4,
+      "params": {
+        "d_entry": 9.499066954812012,
+        "d_near": 0.12597769601753406,
+        "s_min": 8.17485949514319,
+        "rv_cap": 15.997063518874754,
+        "profitTargetReversion": 6.563217666483213,
+        "profitTargetTrend": 1.7581446679932344,
+        "stopLossReversion": 0.37335395204480704,
+        "stopLossTrend": 9.63936715478061,
+        "timeStopReversion": 393,
+        "timeStopTrend": 3098
+      },
+      "value": 0.001,
+      "state": "COMPLETE"
+    }
+  ],
+  "parameter_importance": {
+    "stopLossReversion": 0.2841533752454714,
+    "d_entry": 0.16160256740170686,
+    "rv_cap": 0.14010049156147983,
+    "profitTargetReversion": 0.12646371179712051,
+    "s_min": 0.08822555300812214,
+    "timeStopReversion": 0.07165676341188632,
+    "d_near": 0.03707630183872036,
+    "profitTargetTrend": 0.036991957817440475,
+    "stopLossTrend": 0.03430666266831475,
+    "timeStopTrend": 0.019422615249737395
+  }
+}
