@@ -18,14 +18,22 @@ const moment = require('moment-timezone');
 const { v4: uuidv4 } = require('uuid');
 
 class BacktestEngine {
-  constructor(db, alpacaClient) {
+  constructor(db, alpacaClient, config = {}) {
     this.db = db;
     this.alpacaClient = alpacaClient;
     this.greeksCalculator = new GreeksCalculator();
     this.contractSelector = new ContractSelector(this.greeksCalculator);
     this.barGreeksProcessor = new BarGreeksProcessor(this.greeksCalculator);
-    this.dataCacheManager = new DataCacheManager(db, alpacaClient, this.greeksCalculator);
-    
+
+    // Store strike configuration
+    this.strikeRange = config.strikeRange || 10;   // Default ±$10
+    this.strikeSpacing = config.strikeSpacing || 1; // Default $1
+
+    this.dataCacheManager = new DataCacheManager(db, alpacaClient, this.greeksCalculator, {
+      strikeRange: this.strikeRange,
+      strikeSpacing: this.strikeSpacing
+    });
+
     // State
     this.currentBacktest = null;
     this.openPositions = [];
@@ -33,9 +41,104 @@ class BacktestEngine {
     this.signals = [];
     this.portfolioValue = [];
     this.greeksHistory = [];
-    
+
     // Cache for options data to avoid repeated fetches
     this.optionsDataCache = new Map();
+  }
+
+  /**
+   * Calculate realistic fill price using OHLCV data with VWAP preference
+   * @param {Object} contract - Contract with bars data
+   * @param {string} timestamp - Execution timestamp
+   * @param {string} direction - 'BUY' or 'SELL'
+   * @returns {Object} Fill price details
+   */
+  calculateFillPrice(contract, timestamp, direction = 'BUY') {
+    const fillInfo = {
+      price: 0,
+      method: 'fallback',
+      quality: 'low',
+      slippage: 0,
+      metadata: {}
+    };
+
+    if (!contract.bars || contract.bars.length === 0) {
+      // Fallback to basic pricing
+      fillInfo.price = contract.price || contract.lastPrice || contract.close || 0;
+      fillInfo.method = 'fallback_price';
+      return fillInfo;
+    }
+
+    // Find the bar closest to the execution timestamp
+    const targetTime = new Date(timestamp).getTime();
+    let closestBar = null;
+    let minTimeDiff = Infinity;
+
+    for (const bar of contract.bars) {
+      const barTime = new Date(bar.t).getTime();
+      const timeDiff = Math.abs(barTime - targetTime);
+      
+      if (timeDiff < minTimeDiff) {
+        minTimeDiff = timeDiff;
+        closestBar = bar;
+      }
+    }
+
+    if (!closestBar) {
+      fillInfo.price = contract.price || contract.close || 0;
+      fillInfo.method = 'no_bar_found';
+      return fillInfo;
+    }
+
+    // Use VWAP if available (most realistic)
+    if (closestBar.vwap || closestBar.vw) {
+      fillInfo.price = parseFloat(closestBar.vwap || closestBar.vw);
+      fillInfo.method = 'vwap';
+      fillInfo.quality = 'high';
+    }
+    // Use mid price as second choice
+    else if (closestBar.h && closestBar.l) {
+      fillInfo.price = (parseFloat(closestBar.h) + parseFloat(closestBar.l)) / 2;
+      fillInfo.method = 'mid_price';
+      fillInfo.quality = 'medium';
+    }
+    // Fallback to close price
+    else {
+      fillInfo.price = parseFloat(closestBar.c);
+      fillInfo.method = 'close_price';
+      fillInfo.quality = 'medium';
+    }
+
+    // Apply realistic slippage based on volume and quality
+    const volume = parseInt(closestBar.v || 0);
+    const qualityScore = closestBar.qualityScore || 0;
+    
+    // Calculate slippage percentage (higher for low volume/quality)
+    let slippagePct = 0;
+    if (volume < 10) slippagePct = 0.02;        // 2% slippage for very low volume
+    else if (volume < 50) slippagePct = 0.01;   // 1% slippage for low volume  
+    else if (qualityScore < 50) slippagePct = 0.005; // 0.5% for poor quality
+    else slippagePct = 0.002;                   // 0.2% for good quality
+
+    // Apply slippage (worse price for buyer, better for seller)
+    const slippageAmount = fillInfo.price * slippagePct;
+    if (direction === 'BUY') {
+      fillInfo.price += slippageAmount;  // Pay more when buying
+    } else {
+      fillInfo.price -= slippageAmount;  // Receive less when selling
+    }
+
+    fillInfo.slippage = slippagePct * 100; // Store as percentage
+    fillInfo.metadata = {
+      bar_time: closestBar.t,
+      time_diff_ms: minTimeDiff,
+      volume: volume,
+      quality_score: qualityScore,
+      original_price: closestBar.vwap || closestBar.c,
+      slippage_amount: slippageAmount
+    };
+
+    return fillInfo;
   }
 
   /**
@@ -104,6 +207,15 @@ class BacktestEngine {
       console.log(`\n🎯 Generating strategy signals...`);
       const strategySignals = strategy.generateSignals(underlyingBars);
       console.log(`   Generated ${strategySignals.length} signals`);
+      
+      // Group signals by timestamp to see distribution
+      const signalsByTime = strategySignals.reduce((acc, sig) => {
+        acc[sig.timestamp] = (acc[sig.timestamp] || 0) + 1;
+        return acc;
+      }, {});
+      const uniqueTimestamps = Object.keys(signalsByTime).length;
+      console.log(`   Signals across ${uniqueTimestamps} unique timestamps`);
+      console.log(`   Signal type breakdown: CALL=${strategySignals.filter(s => s.signal_type === 'BUY_CALL').length}, PUT=${strategySignals.filter(s => s.signal_type === 'BUY_PUT').length}`);
 
       // Add symbol to signals if not present
       strategySignals.forEach(sig => {
@@ -124,8 +236,8 @@ class BacktestEngine {
         const currentTime = bar.t;
         const currentPrice = parseFloat(bar.c);
 
-        // Check for signals at this timestamp
-        const activeSignal = strategySignals.find(s => s.timestamp === currentTime);
+        // Check for ALL signals at this timestamp (not just the first one)
+        const activeSignals = strategySignals.filter(s => s.timestamp === currentTime);
 
         // Update existing positions
         const updateResult = await this.updateOpenPositions(bar, strategy, activeBacktestId, mode);
@@ -136,20 +248,32 @@ class BacktestEngine {
           console.log(`   💰 Updated capital: $${currentCapital.toLocaleString()} (P&L: ${updateResult.tradeResult.netPnL >= 0 ? '+' : ''}$${updateResult.tradeResult.netPnL.toFixed(2)})`);
         }
 
-        // Execute new signal if available and allowed
-        if (activeSignal && strategy.canOpenPosition()) {
-          const executed = await this.executeSignal(
-            activeSignal,
-            bar,
-            strategy,
-            activeBacktestId,
-            currentCapital,
-            mode
-          );
+        // Execute ALL signals at this timestamp (up to position limit)
+        if (activeSignals.length > 0) {
+          console.log(`   🎯 Found ${activeSignals.length} signals at ${currentTime}`);
+          
+          for (const signal of activeSignals) {
+            // Check if we can still open more positions
+            if (!strategy.canOpenPosition()) {
+              console.log(`   ⏸️  Max positions (${strategy.maxPositions}) reached, skipping remaining signals`);
+              break;
+            }
 
-          if (executed) {
-            executedSignals++;
-            console.log(`   ✓ Signal ${executedSignals}: ${activeSignal.signal_type} at $${currentPrice.toFixed(2)}`);
+            const executed = await this.executeSignal(
+              signal,
+              bar,
+              strategy,
+              activeBacktestId,
+              currentCapital,
+              mode
+            );
+
+            if (executed) {
+              executedSignals++;
+              console.log(`   ✅ Signal ${executedSignals}/${strategySignals.length}: ${signal.signal_type} at $${currentPrice.toFixed(2)}`);
+            } else {
+              console.log(`   ❌ Signal NOT executed: ${signal.signal_type} (reason logged above)`);
+            }
           }
         }
 
@@ -278,6 +402,31 @@ class BacktestEngine {
       
       console.log(`🎯 [EXECUTE SIGNAL] ${signal.signal_type} at ${currentBar.t}, underlying: $${currentPrice.toFixed(2)}`);
 
+      // Fetch full-day options data for this expiry if not already cached
+      const dayStart = moment(currentBar.t).tz('America/New_York').startOf('day').format();
+      const dayEnd = moment(currentBar.t).tz('America/New_York').endOf('day').format();
+      const broadCacheKey = `${underlyingSymbol}_${expiryDate}_${dayStart}_${dayEnd}`;
+      
+      if (!this.optionsDataCache.has(broadCacheKey)) {
+        console.log(`   📡 Fetching full-day options data for ${expiryDate}...`);
+        const optionsData = await this.dataCacheManager.getOptionsData(
+          underlyingSymbol,
+          expiryDate,
+          dayStart,
+          dayEnd,
+          currentPrice // Pass current price for strike range calculation
+        );
+        
+        if (optionsData && optionsData.length > 0) {
+          // Cache the full options data with bars arrays
+          this.optionsDataCache.set(broadCacheKey, optionsData);
+          console.log(`   ✅ Cached ${optionsData.length} contracts for ${expiryDate} (key: ${broadCacheKey})`);
+        } else {
+          console.log(`   ⚠️  No options data available for ${expiryDate}`);
+          return false;
+        }
+      }
+
       // USE CACHED OPTION CHAIN WITH PRE-CALCULATED GREEKS
       const optionChain = await this.dataCacheManager.buildOptionChainFromCache(
         underlyingSymbol,
@@ -297,13 +446,13 @@ class BacktestEngine {
       const filteredOptionChain = this.contractSelector.filterByStrikeRange(
         optionChain, 
         currentPrice, 
-        20  // numStrikes = 20 means 20 strikes on each side (±$20 range around ATM)
+        5  // numStrikes = 5 means 5 strikes on each side (±$5 range around ATM)
       );
 
-      console.log(`   🎯 Filtered option chain from ${optionChain.length} to ${filteredOptionChain.length} contracts within ±$20 of underlying $${currentPrice.toFixed(2)}`);
+      console.log(`   🎯 Filtered option chain from ${optionChain.length} to ${filteredOptionChain.length} contracts within ±$5 of underlying $${currentPrice.toFixed(2)}`);
 
       if (filteredOptionChain.length === 0) {
-        console.log(`   ⚠️  No contracts found within $3-5 strike range of underlying price $${currentPrice.toFixed(2)}`);
+        console.log(`   ⚠️  No contracts found within ±$5 strike range of underlying price $${currentPrice.toFixed(2)}`);
         return false;
       }
 
@@ -320,14 +469,17 @@ class BacktestEngine {
         return false;
       }
 
-      // Prevent duplicate positions for the same contract
-      const existingPosition = this.openPositions.find(pos => 
+      // Check total contracts for this symbol (limit to 100 contracts per contract symbol)
+      const existingPositions = this.openPositions.filter(pos => 
         pos.contract_symbol === selectedContract.contract_symbol && 
         pos.status === 'OPEN'
       );
       
-      if (existingPosition) {
-        console.log(`   ℹ️  Already have open position for ${selectedContract.contract_symbol}`);
+      const totalExistingContracts = existingPositions.reduce((sum, pos) => sum + (pos.quantity || 0), 0);
+      const maxContractsPerSymbol = 100;
+      
+      if (totalExistingContracts >= maxContractsPerSymbol) {
+        console.log(`   ⏸️  Max contracts (${maxContractsPerSymbol}) reached for ${selectedContract.contract_symbol} (current: ${totalExistingContracts})`);
         return false;
       }
 
@@ -342,11 +494,12 @@ class BacktestEngine {
       
       const contractCost = contractPrice * 100; // Multiplier
       const maxContracts = Math.floor(availableCapital * 0.1 / contractCost); // Use 10% of capital
-      const quantity = Math.min(strategy.contractsPerTrade || 1, maxContracts);
+      const availableContractsForSymbol = maxContractsPerSymbol - totalExistingContracts;
+      const quantity = Math.min(strategy.contractsPerTrade || 1, maxContracts, availableContractsForSymbol);
 
       // Validate quantity before database insertion
       if (!quantity || !isFinite(quantity) || quantity <= 0) {
-        console.log(`   ⚠️  Invalid quantity calculated: ${quantity} (contractPrice: ${contractPrice}, maxContracts: ${maxContracts})`);
+        console.log(`   ⚠️  Invalid quantity calculated: ${quantity} (contractPrice: ${contractPrice}, maxContracts: ${maxContracts}, available: ${availableContractsForSymbol})`);
         return false;
       }
 
@@ -370,6 +523,7 @@ class BacktestEngine {
 
     } catch (error) {
       console.error(`   ❌ Error executing signal:`, error.message);
+      console.error(`   📊 [ERROR STACK]`, error.stack);
       return false;
     }
   }
@@ -392,9 +546,18 @@ class BacktestEngine {
     // Generate unique contract instance ID
     const instanceId = uuidv4();
 
+    // Calculate realistic fill price using enhanced OHLCV data
+    const fillInfo = this.calculateFillPrice(contract, entryTime, 'BUY');
+    console.log(`   💰 [FILL PRICING] ${contract.contract_symbol}: $${fillInfo.price.toFixed(3)} via ${fillInfo.method} (quality: ${fillInfo.quality}, slippage: ${fillInfo.slippage.toFixed(2)}%)`);
+
     // Validate and sanitize Greeks values to prevent database errors
-    const sanitizeValue = (value) => {
+    const sanitizeValue = (value, maxAbs = 999999) => {
       if (value === null || value === undefined || isNaN(value) || !isFinite(value)) {
+        return null;
+      }
+      // Additional bounds checking to prevent database overflow
+      if (Math.abs(value) > maxAbs) {
+        console.log(`   ⚠️  [BOUNDS CHECK] Value ${value} exceeds limit ${maxAbs}, setting to null`);
         return null;
       }
       return value;
@@ -407,6 +570,17 @@ class BacktestEngine {
       vega: sanitizeValue(contract.greeks?.vega),
       rho: sanitizeValue(contract.greeks?.rho),
       impliedVolatility: sanitizeValue(contract.greeks?.impliedVolatility)
+    };
+
+    // Additional bounds checking for Greeks to prevent database overflow (numeric(8,6) allows -99.999999 to 99.999999)
+    // Using very conservative limits well below database constraints to prevent overflow
+    const boundedGreeks = {
+      delta: sanitizedGreeks.delta !== null && Math.abs(sanitizedGreeks.delta) > 1.0 ? null : sanitizedGreeks.delta,
+      gamma: sanitizedGreeks.gamma !== null && Math.abs(sanitizedGreeks.gamma) > 5.0 ? null : sanitizedGreeks.gamma,
+      theta: sanitizedGreeks.theta !== null && Math.abs(sanitizedGreeks.theta) > 50.0 ? null : sanitizedGreeks.theta,
+      vega: sanitizedGreeks.vega !== null && Math.abs(sanitizedGreeks.vega) > 5.0 ? null : sanitizedGreeks.vega,
+      rho: sanitizedGreeks.rho !== null && Math.abs(sanitizedGreeks.rho) > 5.0 ? null : sanitizedGreeks.rho,
+      impliedVolatility: sanitizedGreeks.impliedVolatility !== null && Math.abs(sanitizedGreeks.impliedVolatility) > 3.0 ? null : sanitizedGreeks.impliedVolatility
     };
 
     const result = await this.db.query(`
@@ -424,26 +598,31 @@ class BacktestEngine {
       backtestId,
       contract.contract_symbol,
       contract.underlying_symbol,
-      sanitizeValue(contract.strike_price),
+      sanitizeValue(contract.strike_price, 99999), // numeric(10,2) max ~99999
       contract.expiry_date,
       contract.option_type,
       entryTime,
-      sanitizeValue(contract.price || contract.lastPrice || contract.close),
-      mode === 'live' ? sanitizeValue(contract.greeks?.bid) : null,
-      mode === 'live' ? sanitizeValue(contract.greeks?.ask) : null,
-      mode === 'live' ? sanitizeValue(contract.greeks?.spreadPct) : null,
+      sanitizeValue(fillInfo.price, 99999), // numeric(10,4) max ~99999
+      mode === 'live' ? sanitizeValue(contract.greeks?.bid, 99999) : sanitizeValue(fillInfo.metadata?.original_price, 99999),
+      mode === 'live' ? sanitizeValue(contract.greeks?.ask, 99999) : sanitizeValue(fillInfo.price, 99999),
+      mode === 'live' ? sanitizeValue(contract.greeks?.spreadPct, 99) : sanitizeValue(fillInfo.slippage, 99), // numeric(8,6) max ~99
       quantity,
-      sanitizeValue(underlyingPrice),
-      sanitizedGreeks.delta,
-      sanitizedGreeks.gamma,
-      sanitizedGreeks.theta,
-      sanitizedGreeks.vega,
-      sanitizedGreeks.rho,
-      sanitizedGreeks.impliedVolatility,
+      sanitizeValue(underlyingPrice, 99999), // numeric(10,4) max ~99999
+      boundedGreeks.delta,
+      boundedGreeks.gamma,
+      boundedGreeks.theta,
+      boundedGreeks.vega,
+      boundedGreeks.rho,
+      boundedGreeks.impliedVolatility,
       mode,
       'OPEN',
       JSON.stringify(signal || {})
-    ]);
+    ]).catch(err => {
+      console.error(`   ❌ [DB INSERT ERROR] Failed to insert position:`, err.message);
+      console.error(`   📊 [DEBUG VALUES] contract=${contract.contract_symbol}, strike=${contract.strike_price}, price=${fillInfo.price}`);
+      console.error(`   📊 [DEBUG GREEKS] delta=${boundedGreeks.delta}, gamma=${boundedGreeks.gamma}, theta=${boundedGreeks.theta}, vega=${boundedGreeks.vega}, IV=${boundedGreeks.impliedVolatility}`);
+      throw err;
+    });
 
     return {
       id: result.rows[0].id,
@@ -455,7 +634,10 @@ class BacktestEngine {
       option_type: contract.option_type,
       quantity,
       entry_timestamp: entryTime,
-      entry_price: contract.price,
+      entry_price: fillInfo.price, // Use enhanced fill price
+      fill_method: fillInfo.method,
+      fill_quality: fillInfo.quality,
+      slippage_pct: fillInfo.slippage,
       status: 'OPEN',
       greeks: contract.greeks
     };
@@ -485,7 +667,13 @@ class BacktestEngine {
           // Fetch from cache using broader key
           const dayStart = moment(bar.t).tz('America/New_York').startOf('day').format();
           const dayEnd = moment(bar.t).tz('America/New_York').endOf('day').format();
-          const broadKey = `${position.underlying_symbol}_${position.expiry_date}_${dayStart}_${dayEnd}`;
+          
+          // Normalize expiry date to YYYY-MM-DD format (it might be stored as Date object)
+          const expiryStr = typeof position.expiry_date === 'string' && position.expiry_date.includes('-') 
+            ? position.expiry_date 
+            : moment(position.expiry_date).format('YYYY-MM-DD');
+          
+          const broadKey = `${position.underlying_symbol}_${expiryStr}_${dayStart}_${dayEnd}`;
           
           console.log(`🔍 [LOOKUP DEBUG] No contractData for specific key. Trying broadKey: ${broadKey}`);
           
@@ -637,13 +825,44 @@ class BacktestEngine {
   }
 
   /**
-   * Close position with exit Greeks
+   * Close position with exit Greeks and enhanced OHLCV fill pricing
    */
   async closePosition(position, exitPrice, exitTime, closeReason, exitGreeks, backtestId) {
-    const grossPnL = (exitPrice - position.entry_price) * position.quantity * 100;
+    // Calculate enhanced exit fill price using OHLCV data if available
+    let enhancedExitPrice = exitPrice;
+    let fillMethod = 'provided_price';
+    let fillQuality = 'medium';
+    let slippage = 0;
+
+    // Try to get better fill price from contract data
+    if (position.contract_data && position.contract_data.bars) {
+      const fillInfo = this.calculateFillPrice(position.contract_data, exitTime, 'SELL');
+      enhancedExitPrice = fillInfo.price;
+      fillMethod = fillInfo.method;
+      fillQuality = fillInfo.quality;
+      slippage = fillInfo.slippage;
+      
+      console.log(`   💰 [EXIT FILL] ${position.contract_symbol}: $${enhancedExitPrice.toFixed(3)} via ${fillMethod} (was $${exitPrice.toFixed(3)})`);
+    } else {
+      // Use provided price but still apply slight slippage for realism
+      const baseSlippage = 0.002; // 0.2% default slippage
+      enhancedExitPrice = exitPrice * (1 - baseSlippage); // Selling gets slightly worse price
+      slippage = baseSlippage * 100;
+      fillMethod = 'fallback_with_slippage';
+    }
+
+    const grossPnL = (enhancedExitPrice - position.entry_price) * position.quantity * 100;
     const fees = position.quantity * 1.30; // $0.65 per contract per side
     const netPnL = grossPnL - fees;
-    const returnPct = (exitPrice - position.entry_price) / position.entry_price;
+    
+    // FIXED: Return percentage must account for fees (net P&L / capital at risk)
+    const capitalAtRisk = position.entry_price * position.quantity * 100;
+    const returnPct = netPnL / capitalAtRisk;
+    
+    // FIXED: Calculate holding period in minutes
+    const entryTime = new Date(position.entry_timestamp);
+    const exitTimeDate = new Date(exitTime);
+    const holdingPeriodMinutes = Math.round((exitTimeDate - entryTime) / (1000 * 60));
 
     await this.db.query(`
       UPDATE option_contracts
@@ -651,24 +870,31 @@ class BacktestEngine {
           net_pnl = $4, fees = $5, return_pct = $6,
           exit_delta = $7, exit_gamma = $8, exit_theta = $9,
           exit_vega = $10, exit_rho = $11, exit_iv = $12,
-          status = 'CLOSED', close_reason = $13, updated_at = NOW()
-      WHERE instance_id = $14
+          holding_period_minutes = $13,
+          status = 'CLOSED', close_reason = $14, updated_at = NOW()
+      WHERE instance_id = $15
     `, [
-      exitTime, exitPrice, grossPnL, netPnL, fees, returnPct,
+      exitTime, enhancedExitPrice, grossPnL, netPnL, fees, returnPct,
       exitGreeks?.delta, exitGreeks?.gamma, exitGreeks?.theta,
       exitGreeks?.vega, exitGreeks?.rho, exitGreeks?.impliedVolatility,
+      holdingPeriodMinutes,
       closeReason, position.instance_id
     ]);
 
     // Move to closed positions
     const closedPosition = {
       ...position,
-      exit_price: exitPrice,
+      exit_price: enhancedExitPrice,
+      original_exit_price: exitPrice,
+      exit_fill_method: fillMethod,
+      exit_fill_quality: fillQuality,
+      exit_slippage_pct: slippage,
       exit_timestamp: exitTime,
       gross_pnl: grossPnL,
       net_pnl: netPnL,
       fees,
       return_pct: returnPct,
+      holding_period_minutes: holdingPeriodMinutes,
       close_reason: closeReason,
       exit_greeks: exitGreeks,
       status: 'CLOSED'
@@ -1412,6 +1638,7 @@ class BacktestEngine {
       'HAVWAP': require('../strategies/havwap-proper'),
       'HAVWAP-Rev-v2': require('../strategies/havwap-proper'), // Fixed: Use existing strategy
       'havwap-proper': require('../strategies/havwap-proper'),
+      'rsi-vwap-fusion': require('../strategies/rsi-vwap-fusion'),
       'DefaultStrategy': require('../strategies/havwap-proper')
     };
     

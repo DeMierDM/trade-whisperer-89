@@ -1,0 +1,668 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced Strategy Multi-Day Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 3em;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .enhancement-banner {
+            background: rgba(255,255,255,0.95);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            border-left: 8px solid #059669;
+        }
+        
+        .test-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .test-section h2 {
+            color: #059669;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            border-bottom: 3px solid #059669;
+            padding-bottom: 10px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(5, 150, 105, 0.4);
+        }
+        
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        
+        .result-box {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            max-height: 600px;
+            overflow-y: auto;
+        }
+        
+        .success {
+            background: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #059669;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        pre {
+            background: #2d3748;
+            color: #fff;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-top: 10px;
+            white-space: pre-wrap;
+        }
+        
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+        }
+        
+        .comparison-table th,
+        .comparison-table td {
+            border: 1px solid #ddd;
+            padding: 12px;
+            text-align: left;
+        }
+        
+        .comparison-table th {
+            background: #f8f9fa;
+            font-weight: bold;
+        }
+        
+        .positive {
+            color: #059669;
+            font-weight: bold;
+        }
+        
+        .negative {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .neutral {
+            color: #6c757d;
+        }
+        
+        .metric-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin: 20px 0;
+        }
+        
+        .metric-card {
+            background: linear-gradient(135deg, #059669 0%, #0d9488 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .metric-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e9ecef;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #059669, #0d9488);
+            transition: width 0.3s ease;
+        }
+        
+        .enhancement-item {
+            display: flex;
+            align-items: center;
+            margin: 10px 0;
+            padding: 10px;
+            background: rgba(5, 150, 105, 0.1);
+            border-radius: 6px;
+        }
+        
+        .enhancement-icon {
+            color: #059669;
+            font-size: 1.2em;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🚀 Enhanced Strategy Multi-Day Test</h1>
+        
+        <!-- Enhancement Summary -->
+        <div class="enhancement-banner">
+            <h2 style="color: #059669; margin-bottom: 15px;">✨ Strategy Enhancements Applied</h2>
+            <div class="enhancement-item">
+                <span class="enhancement-icon">🕐</span>
+                <span><strong>Expanded Trading Window:</strong> 10:00-11:30 AM → 9:30-11:30 AM (+90 minutes)</span>
+            </div>
+            <div class="enhancement-item">
+                <span class="enhancement-icon">📊</span>
+                <span><strong>Relaxed RSI Thresholds:</strong> 30/70 → 35/65 (more frequent signals)</span>
+            </div>
+            <div class="enhancement-item">
+                <span class="enhancement-icon">📈</span>
+                <span><strong>VWAP-Only Signals:</strong> Trade on strong VWAP deviations even with neutral RSI</span>
+            </div>
+            <div class="enhancement-item">
+                <span class="enhancement-icon">⚡</span>
+                <span><strong>Momentum Signals:</strong> Capture price momentum + RSI confirmation</span>
+            </div>
+            <div class="enhancement-item">
+                <span class="enhancement-icon">🎯</span>
+                <span><strong>Opening Range:</strong> More permissive breakout conditions</span>
+            </div>
+        </div>
+        
+        <!-- Test 1: Enhanced Multi-Day Backtest -->
+        <div class="test-section">
+            <h2>🧪 Test 1: Enhanced Multi-Day Backtest</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Testing if enhancements generate trades across multiple days instead of just 1-2 days
+            </p>
+            
+            <div style="margin-bottom: 20px;">
+                <label style="display: block; margin-bottom: 5px; font-weight: 600;">Test Period:</label>
+                <input type="date" id="enhanced-start" value="2025-01-21" style="padding: 8px; border: 2px solid #ddd; border-radius: 4px; margin-right: 10px;">
+                <input type="date" id="enhanced-end" value="2025-01-31" style="padding: 8px; border: 2px solid #ddd; border-radius: 4px;">
+            </div>
+            
+            <button onclick="runEnhancedBacktest()" id="enhanced-btn">Run Enhanced Backtest</button>
+            <button onclick="runOriginalComparison()" id="original-btn">Run Original for Comparison</button>
+            
+            <div class="progress-bar" id="enhanced-progress" style="display: none;">
+                <div class="progress-fill" id="enhanced-fill" style="width: 0%;"></div>
+            </div>
+            
+            <div id="enhanced-result" class="result-box info" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 2: Daily Trading Analysis -->
+        <div class="test-section">
+            <h2>📅 Test 2: Daily Trading Distribution Analysis</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Analyzing if enhanced strategy trades on multiple days vs original single-day pattern
+            </p>
+            
+            <button onclick="analyzeDailyDistribution()" id="daily-btn">Analyze Daily Distribution</button>
+            <div id="daily-result" class="result-box info" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 3: Signal Type Breakdown -->
+        <div class="test-section">
+            <h2>🎯 Test 3: Signal Type Effectiveness</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Testing which signal types (RSI, VWAP, Momentum, ORB) generate the most profitable trades
+            </p>
+            
+            <button onclick="analyzeSignalTypes()" id="signals-btn">Analyze Signal Performance</button>
+            <div id="signals-result" class="result-box info" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 4: Before/After Comparison -->
+        <div class="test-section">
+            <h2>⚖️ Test 4: Before vs After Enhancement</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Comprehensive comparison of original restrictive strategy vs enhanced permissive strategy
+            </p>
+            
+            <button onclick="compareStrategies()" id="compare-enhanced-btn">Compare Original vs Enhanced</button>
+            <div id="compare-enhanced-result" class="result-box info" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3002';
+        let enhancedBacktestId = null;
+        
+        // Test 1: Run Enhanced Backtest
+        async function runEnhancedBacktest() {
+            const startDate = document.getElementById('enhanced-start').value;
+            const endDate = document.getElementById('enhanced-end').value;
+            const resultDiv = document.getElementById('enhanced-result');
+            const progressBar = document.getElementById('enhanced-progress');
+            const progressFill = document.getElementById('enhanced-fill');
+            const btn = document.getElementById('enhanced-btn');
+            
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box info';
+            progressBar.style.display = 'block';
+            btn.disabled = true;
+            
+            try {
+                resultDiv.innerHTML = '<div class="loading"></div> Starting enhanced strategy backtest...';
+                progressFill.style.width = '10%';
+                
+                const backtestPayload = {
+                    strategy: 'rsi-vwap-morning-session',
+                    symbol: 'SPY',
+                    start_date: startDate,
+                    end_date: endDate,
+                    initial_capital: 100000,
+                    commission_per_contract: 0.65,
+                    slippage_pct: 50
+                };
+                
+                console.log('Starting enhanced backtest:', backtestPayload);
+                
+                const response = await fetch(`${API_BASE}/api/backtest/start`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(backtestPayload)
+                });
+                
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP ${response.status}: ${errorText}`);
+                }
+                
+                const { id } = await response.json();
+                enhancedBacktestId = id;
+                
+                resultDiv.innerHTML = `<div class="loading"></div> Enhanced backtest started (ID: ${id}). Monitoring progress...`;
+                progressFill.style.width = '30%';
+                
+                await pollBacktestCompletion(id, resultDiv, progressFill, 'enhanced');
+                
+            } catch (error) {
+                console.error('Enhanced backtest error:', error);
+                resultDiv.className = 'result-box error';
+                resultDiv.innerHTML = `
+                    <h3>❌ Enhanced Backtest Failed</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <pre>${error.stack || 'No stack trace available'}</pre>
+                `;
+                progressBar.style.display = 'none';
+            } finally {
+                btn.disabled = false;
+            }
+        }
+        
+        // Poll backtest completion
+        async function pollBacktestCompletion(backtestId, resultDiv, progressFill, type = 'enhanced') {
+            let attempts = 0;
+            const maxAttempts = 180; // 3 minutes max
+            
+            while (attempts < maxAttempts) {
+                try {
+                    const statusResponse = await fetch(`${API_BASE}/api/backtest/status/${backtestId}`);
+                    if (!statusResponse.ok) throw new Error('Status check failed');
+                    
+                    const status = await statusResponse.json();
+                    
+                    const progress = Math.min(30 + (attempts * 2), 90);
+                    progressFill.style.width = `${progress}%`;
+                    
+                    if (status.status === 'completed') {
+                        progressFill.style.width = '100%';
+                        
+                        const tradesResponse = await fetch(`${API_BASE}/api/backtest/${backtestId}/trades`);
+                        const trades = await tradesResponse.json();
+                        
+                        displayEnhancedResults(status, trades, resultDiv, type);
+                        return;
+                    }
+                    
+                    if (status.status === 'failed' || status.status === 'error') {
+                        throw new Error(`Backtest failed: ${status.error || 'Unknown error'}`);
+                    }
+                    
+                    resultDiv.innerHTML = `<div class="loading"></div> Running... Status: ${status.status} (${attempts + 1}/${maxAttempts})`;
+                    
+                } catch (error) {
+                    console.error('Status check error:', error);
+                }
+                
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                attempts++;
+            }
+            
+            throw new Error('Backtest timed out after 3 minutes');
+        }
+        
+        // Display enhanced results
+        function displayEnhancedResults(metrics, trades, resultDiv, type) {
+            const startDate = document.getElementById('enhanced-start').value;
+            const endDate = document.getElementById('enhanced-end').value;
+            const dayCount = Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24));
+            
+            resultDiv.className = 'result-box success';
+            
+            // Group trades by day and signal type
+            const tradesByDay = {};
+            const tradesBySignal = {};
+            
+            trades.forEach(trade => {
+                const date = trade.entry_timestamp.split('T')[0];
+                if (!tradesByDay[date]) tradesByDay[date] = [];
+                tradesByDay[date].push(trade);
+                
+                // Extract signal reason from trade data if available
+                const reason = trade.signal_reason || 'UNKNOWN';
+                if (!tradesBySignal[reason]) tradesBySignal[reason] = [];
+                tradesBySignal[reason].push(trade);
+            });
+            
+            const tradingDays = Object.keys(tradesByDay).length;
+            const totalPnL = trades.reduce((sum, t) => sum + parseFloat(t.net_pnl || 0), 0);
+            const winningTrades = trades.filter(t => parseFloat(t.net_pnl || 0) > 0);
+            const winRate = trades.length > 0 ? (winningTrades.length / trades.length * 100).toFixed(1) : '0.0';
+            
+            const returnPct = (parseFloat(metrics.total_return || 0) * 100).toFixed(2);
+            const returnClass = parseFloat(metrics.total_return || 0) >= 0 ? 'positive' : 'negative';
+            
+            // Build daily breakdown
+            let dailyBreakdown = '<h4 style="margin-top: 25px;">📅 Enhanced Daily Performance:</h4>';
+            dailyBreakdown += '<table class="comparison-table"><tr><th>Date</th><th>Trades</th><th>P&L</th><th>Win Rate</th><th>Hours</th></tr>';
+            
+            Object.keys(tradesByDay).sort().forEach(date => {
+                const dayTrades = tradesByDay[date];
+                const dayPnL = dayTrades.reduce((sum, t) => sum + parseFloat(t.net_pnl || 0), 0);
+                const dayWins = dayTrades.filter(t => parseFloat(t.net_pnl || 0) > 0);
+                const dayWinRate = (dayWins.length / dayTrades.length * 100).toFixed(1);
+                const pnlClass = dayPnL >= 0 ? 'positive' : 'negative';
+                
+                // Extract trading hours
+                const hours = [...new Set(dayTrades.map(t => new Date(t.entry_timestamp).getUTCHours() - 5))].sort();
+                const hourRange = hours.length > 1 ? `${Math.min(...hours)}:00-${Math.max(...hours)}:59` : `${hours[0] || 'N/A'}:xx`;
+                
+                dailyBreakdown += `
+                    <tr>
+                        <td>${date}</td>
+                        <td>${dayTrades.length}</td>
+                        <td class="${pnlClass}">$${dayPnL.toFixed(2)}</td>
+                        <td>${dayWinRate}%</td>
+                        <td>${hourRange}</td>
+                    </tr>
+                `;
+            });
+            dailyBreakdown += '</table>';
+            
+            // Signal type breakdown
+            let signalBreakdown = '<h4 style="margin-top: 25px;">🎯 Signal Type Performance:</h4>';
+            signalBreakdown += '<table class="comparison-table"><tr><th>Signal Type</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th><th>Total P&L</th></tr>';
+            
+            Object.keys(tradesBySignal).forEach(signalType => {
+                const signalTrades = tradesBySignal[signalType];
+                const signalPnL = signalTrades.reduce((sum, t) => sum + parseFloat(t.net_pnl || 0), 0);
+                const signalWins = signalTrades.filter(t => parseFloat(t.net_pnl || 0) > 0);
+                const signalWinRate = (signalWins.length / signalTrades.length * 100).toFixed(1);
+                const avgPnL = (signalPnL / signalTrades.length).toFixed(2);
+                const pnlClass = signalPnL >= 0 ? 'positive' : 'negative';
+                
+                signalBreakdown += `
+                    <tr>
+                        <td>${signalType}</td>
+                        <td>${signalTrades.length}</td>
+                        <td>${signalWinRate}%</td>
+                        <td class="${pnlClass}">$${avgPnL}</td>
+                        <td class="${pnlClass}">$${signalPnL.toFixed(2)}</td>
+                    </tr>
+                `;
+            });
+            signalBreakdown += '</table>';
+            
+            resultDiv.innerHTML = `
+                <h3 style="color: #155724; margin-bottom: 15px;">✅ Enhanced Strategy Results</h3>
+                <p><strong>Period:</strong> ${startDate} to ${endDate} (${dayCount} calendar days)</p>
+                
+                <div class="metric-grid">
+                    <div class="metric-card">
+                        <div class="metric-label">Trading Days</div>
+                        <div class="metric-value">${tradingDays}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Trades</div>
+                        <div class="metric-value">${trades.length}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Win Rate</div>
+                        <div class="metric-value">${winRate}%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Total Return</div>
+                        <div class="metric-value ${returnClass}">${returnPct}%</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Avg Trades/Day</div>
+                        <div class="metric-value">${tradingDays > 0 ? (trades.length / tradingDays).toFixed(1) : '0'}</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-label">Sharpe Ratio</div>
+                        <div class="metric-value">${parseFloat(metrics.sharpe_ratio || 0).toFixed(2)}</div>
+                    </div>
+                </div>
+                
+                ${dailyBreakdown}
+                ${signalBreakdown}
+                
+                <div style="margin-top: 25px; padding: 15px; background: #d4edda; border-radius: 6px;">
+                    <h4 style="color: #155724;">📊 Multi-Day Trading Assessment:</h4>
+                    <ul style="margin-top: 10px; margin-left: 20px; color: #155724;">
+                        <li><strong>Days with trades:</strong> ${tradingDays}/${dayCount} (${(tradingDays/dayCount*100).toFixed(1)}% coverage)</li>
+                        <li><strong>Strategy improvement:</strong> ${tradingDays > 1 ? '✅ Trading across multiple days' : '❌ Still concentrated on few days'}</li>
+                        <li><strong>Signal diversity:</strong> ${Object.keys(tradesBySignal).length} different signal types used</li>
+                        <li><strong>Time coverage:</strong> Trading window expanded from 1.5 hours to 2 hours</li>
+                    </ul>
+                </div>
+                
+                <h4 style="margin-top: 25px;">📊 Sample Trades (First 5):</h4>
+                <pre>${JSON.stringify(trades.slice(0, 5), null, 2)}</pre>
+            `;
+            
+            document.getElementById('enhanced-progress').style.display = 'none';
+        }
+        
+        // Analyze daily distribution
+        async function analyzeDailyDistribution() {
+            const resultDiv = document.getElementById('daily-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box info';
+            resultDiv.innerHTML = '<div class="loading"></div> Analyzing daily trading patterns...';
+            
+            try {
+                // Get recent backtests to compare
+                const response = await fetch(`${API_BASE}/api/backtest/recent?limit=20`);
+                const backtests = await response.json();
+                
+                let analysis = '<h3 style="color: #059669;">📊 Daily Trading Distribution Analysis</h3>';
+                analysis += '<table class="comparison-table"><tr><th>Backtest ID</th><th>Date Range</th><th>Total Days</th><th>Trading Days</th><th>Coverage %</th><th>Trades</th><th>Strategy</th></tr>';
+                
+                // Analyze each backtest
+                for (const bt of backtests.slice(0, 10)) {
+                    try {
+                        const tradesResp = await fetch(`${API_BASE}/api/backtest/${bt.id}/trades`);
+                        const trades = await tradesResp.json();
+                        
+                        const startDate = new Date(bt.start_date);
+                        const endDate = new Date(bt.end_date);
+                        const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1;
+                        
+                        const tradingDays = new Set(trades.map(t => t.entry_timestamp.split('T')[0])).size;
+                        const coverage = totalDays > 0 ? (tradingDays / totalDays * 100).toFixed(1) : '0';
+                        const strategyType = bt.id === enhancedBacktestId ? 'ENHANCED' : 'ORIGINAL';
+                        
+                        const coverageClass = tradingDays > 1 ? 'positive' : (tradingDays === 1 ? 'warning' : 'negative');
+                        
+                        analysis += `
+                            <tr>
+                                <td>${bt.id}</td>
+                                <td>${bt.start_date.split('T')[0]} to ${bt.end_date.split('T')[0]}</td>
+                                <td>${totalDays}</td>
+                                <td class="${coverageClass}">${tradingDays}</td>
+                                <td class="${coverageClass}">${coverage}%</td>
+                                <td>${bt.total_trades || 0}</td>
+                                <td><strong>${strategyType}</strong></td>
+                            </tr>
+                        `;
+                    } catch (e) {
+                        console.error(`Error analyzing backtest ${bt.id}:`, e);
+                    }
+                }
+                
+                analysis += '</table>';
+                
+                analysis += `
+                    <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 6px;">
+                        <h4 style="color: #856404;">📈 Key Insights:</h4>
+                        <p style="color: #856404; margin-top: 10px;">
+                            <strong>Multi-Day Coverage Patterns:</strong><br>
+                            • <span class="positive">Green</span>: Multiple trading days (good distribution)<br>
+                            • <span class="warning">Yellow</span>: Single trading day (concentrated)<br>
+                            • <span class="negative">Red</span>: No trades (strategy too restrictive)<br><br>
+                            
+                            <strong>Enhanced Strategy Goal:</strong> Increase trading day coverage from ~10% to >50%
+                        </p>
+                    </div>
+                `;
+                
+                resultDiv.className = 'result-box success';
+                resultDiv.innerHTML = analysis;
+                
+            } catch (error) {
+                resultDiv.className = 'result-box error';
+                resultDiv.innerHTML = `<h3>❌ Analysis Failed</h3><p>${error.message}</p>`;
+            }
+        }
+        
+        // Other functions (placeholder)
+        async function runOriginalComparison() {
+            alert('To test original strategy, restore backup file and restart server');
+        }
+        
+        async function analyzeSignalTypes() {
+            const resultDiv = document.getElementById('signals-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box warning';
+            resultDiv.innerHTML = `
+                <h3>🎯 Signal Type Analysis</h3>
+                <p>This analysis requires the enhanced backtest to complete first.</p>
+                <p>Run the enhanced backtest above, then this will show which signal types (RSI, VWAP, Momentum, ORB) are most effective.</p>
+            `;
+        }
+        
+        async function compareStrategies() {
+            const resultDiv = document.getElementById('compare-enhanced-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box warning';
+            resultDiv.innerHTML = `
+                <h3>⚖️ Strategy Comparison</h3>
+                <p>To compare strategies:</p>
+                <ol style="margin-left: 20px; margin-top: 10px;">
+                    <li>Run enhanced backtest above</li>
+                    <li>Restore original strategy from backup</li>
+                    <li>Run original backtest on same dates</li>
+                    <li>Compare daily trading patterns</li>
+                </ol>
+            `;
+        }
+        
+        console.log('🚀 Enhanced Strategy Test Tool Loaded');
+    </script>
+</body>
+</html>
