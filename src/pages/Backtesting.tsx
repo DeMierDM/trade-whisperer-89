@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Play, Download, Eye, Loader2, BarChart3, Database, Target } from "lucide-react";
+import { Play, Download, Eye, Loader2, BarChart3, Database, Target, History } from "lucide-react";
 import { useBacktest } from "@/hooks/useBacktest";
 import { useBacktestingData } from "@/hooks/useBacktestingData";
 // LIVE WebSocket through Docker server - no direct Alpaca connections
@@ -16,6 +16,11 @@ import { useToast } from "@/hooks/use-toast";
 import { LiveTradingViewChart, ChartUpdateAPI } from "@/components/LiveTradingViewChart";
 import { useLiveChartUpdates } from "@/hooks/useLiveChartUpdates";
 import { ENDPOINTS } from "@/lib/apiConfig";
+import { BacktestResults } from "@/components/BacktestResults";
+import { BacktestProgress } from "@/components/BacktestProgress";
+import { BacktestErrorBoundary } from "@/components/BacktestErrorBoundary";
+import { usePreviousBacktests } from "@/hooks/usePreviousBacktests";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 interface BacktestConfig {
   strategy: string;
@@ -30,7 +35,8 @@ interface BacktestConfig {
 
 const Backtesting = () => {
   const { toast } = useToast();
-  const { loading, results, runBacktest, fetchTrades } = useBacktest();
+  const { loading, results, metrics, trades, progress, statusMessage, runBacktest, fetchTrades, fetchBacktestById } = useBacktest();
+  const { backtests: previousBacktests, loading: loadingPrevious, refresh: refreshBacktests } = usePreviousBacktests();
   const { 
     loading: dataLoading, 
     error: dataError, 
@@ -38,6 +44,11 @@ const Backtesting = () => {
     fetchHistoricalData,
     clearData 
   } = useBacktestingData();
+
+  // Progress tracking states
+  const [dataFetchStep, setDataFetchStep] = useState(0); // 0: idle, 1: fetching stock, 2: fetching options, 3: complete
+  const [dataFetchProgress, setDataFetchProgress] = useState(0);
+  const [dataFetchMessage, setDataFetchMessage] = useState('');
 
 
 
@@ -62,16 +73,16 @@ const Backtesting = () => {
   const [optionsError, setOptionsError] = useState<string | null>(null);
 
     const [config, setConfig] = useState<BacktestConfig>({
-    strategy: 'HAVWAP-Rev-v2',
+    strategy: 'rsi-vwap-morning-session',
     symbol: 'SPY',
-    startDate: '2024-10-10',
-    endDate: '2024-10-10',
+    startDate: '2025-01-27',
+    endDate: '2025-02-07',
     timeframe: '1Min' as '1Min' | '5Min' | '15Min' | '1Hour' | '1Day',
     initialCapital: 100000,
     commissionPerContract: 0.65,
     slippagePct: 50,
   });
-  const [trades, setTrades] = useState<any[]>([]);
+  const [legacyTrades, setLegacyTrades] = useState<any[]>([]);
   const [equityCurve, setEquityCurve] = useState<any[]>([]);
   const [optionSymbols, setOptionSymbols] = useState<string[]>([]);
   const [dataPreviewMode, setDataPreviewMode] = useState(false);
@@ -126,7 +137,7 @@ const Backtesting = () => {
   const loadTrades = async () => {
     if (!results) return;
     const tradesData = await fetchTrades(results.id);
-    setTrades(tradesData);
+    setLegacyTrades(tradesData);
 
     // Calculate equity curve
     let equity = config.initialCapital;
@@ -251,6 +262,11 @@ const Backtesting = () => {
       setChartBars([]);
       setAvailableContracts([]);
       setSelectedContract('');
+      
+      // Start progress tracking
+      setDataFetchStep(1);
+      setDataFetchProgress(10);
+      setDataFetchMessage('Fetching stock data...');
 
       console.log('[SIMPLE FETCH] 📊 Fetching stock data for', config.symbol);
       console.log('[SIMPLE FETCH] 📅 Date range:', config.startDate, 'to', config.endDate);
@@ -271,13 +287,20 @@ const Backtesting = () => {
       // Load stock data to chart
       setChartBars(stockData.bars);
       setStockDataLoaded(true);
+      
+      setDataFetchProgress(40);
+      setDataFetchMessage(`Stock data loaded (${stockData.totalBars} bars)`);
 
       toast({
         title: "Stock Data Loaded",
         description: `Loaded ${stockData.totalBars} bars. Now fetching options...`,
       });
 
-      // Fetch options data immediately (no timeout needed)
+      // Fetch options data immediately
+      setDataFetchStep(2);
+      setDataFetchProgress(50);
+      setDataFetchMessage('Fetching options data...');
+      
       console.log('[SIMPLE FETCH] 🎯 Fetching options data...');
       console.log('[SIMPLE FETCH] Stock data loaded:', stockData.bars.length, 'bars');
       const optionsResult = await handleFetchOptionsData(true);
@@ -288,14 +311,29 @@ const Backtesting = () => {
         setSelectedContract(contracts[0] || '');
         setOptionsDataLoaded(true);
         
+        setDataFetchStep(3);
+        setDataFetchProgress(100);
+        setDataFetchMessage(`Data loaded: ${contracts.length} option contracts`);
+        
         toast({
-          title: "Complete!",
-          description: `Loaded stock data and ${contracts.length} option contracts.`,
+          title: "Data Loaded - Running Backtest",
+          description: `Loaded stock data and ${contracts.length} option contracts. Now running backtest...`,
         });
+
+        // Automatically run backtest after data is loaded
+        console.log('[AUTO-BACKTEST] Data loaded successfully, initiating backtest...');
+        setTimeout(() => {
+          // Reset data fetch progress when backtest starts
+          setDataFetchStep(0);
+          runBacktest(config);
+        }, 500); // Small delay to ensure UI updates
       }
 
     } catch (error) {
       console.error('[SIMPLE FETCH] Error:', error);
+      setDataFetchStep(0);
+      setDataFetchProgress(0);
+      setDataFetchMessage('');
       toast({
         title: "Fetch Failed",
         description: error instanceof Error ? error.message : "Failed to fetch data",
@@ -338,9 +376,9 @@ const Backtesting = () => {
                   onChange={(e) => setConfig({ ...config, strategy: e.target.value })}
                   aria-label="Strategy"
                 >
-                  <option value="HAVWAP-Rev-v2">HAVWAP-Rev-v2</option>
-                  <option value="Delta-Bucket-Trend">Delta-Bucket-Trend</option>
-                  <option value="ATM-Scalp-v1">ATM-Scalp-v1</option>
+                  <option value="rsi-vwap-morning-session">RSI-VWAP Morning Session (10:00-11:30 AM) ⭐</option>
+                  <option value="rsi-vwap-fusion">RSI-VWAP Fusion (All Day)</option>
+                  <option value="rsi-vwap-adaptive-tod">RSI-VWAP Adaptive Time-of-Day</option>
                 </select>
               </div>
 
@@ -513,6 +551,76 @@ const Backtesting = () => {
                 </div>
               )}
 
+              {/* Previous Backtests Dropdown */}
+              {previousBacktests.length > 0 && (
+                <div className="mt-3 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                  <div className="flex items-center gap-2 mb-2">
+                    <History className="w-4 h-4 text-purple-500" />
+                    <span className="text-sm font-medium text-purple-500">Previous Backtests</span>
+                    <Badge variant="outline" className="text-xs">
+                      {previousBacktests.length} available
+                    </Badge>
+                  </div>
+                  
+                  <Select
+                    onValueChange={async (value) => {
+                      const backtestId = value;
+                      console.log('[PREVIOUS BACKTEST] Loading backtest ID:', backtestId);
+
+                      try {
+                        // Fetch both metrics and trades for selected backtest
+                        const [metricsData] = await Promise.all([
+                          fetchBacktestById(backtestId),
+                          fetchTrades(backtestId)
+                        ]);
+
+                        toast({
+                          title: "Backtest Loaded",
+                          description: `Loaded ${metricsData.total_trades || 0} trades from backtest #${backtestId}`,
+                        });
+                      } catch (error) {
+                        console.error('[PREVIOUS BACKTEST] Error loading:', error);
+                        toast({
+                          title: "Load Failed",
+                          description: `Could not load backtest #${backtestId}`,
+                          variant: "destructive"
+                        });
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Load Previous Backtest..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {previousBacktests.map((bt) => {
+                        const returnPct = (parseFloat(bt.total_return || '0') * 100).toFixed(2);
+                        const returnColor = parseFloat(bt.total_return || '0') >= 0 ? 'text-green-500' : 'text-red-500';
+                        
+                        return (
+                          <SelectItem key={bt.id} value={bt.id.toString()}>
+                            <div className="flex flex-col">
+                              <span className="font-medium">
+                                {bt.strategy_name} - {bt.symbol}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {bt.total_trades || 0} trades • <span className={returnColor}>{returnPct}%</span> • {new Date(bt.created_at).toLocaleDateString()}
+                              </span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  
+                  {loadingPrevious && (
+                    <div className="mt-2 text-xs text-muted-foreground flex items-center gap-2">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      Loading previous backtests...
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Options Contracts Dropdown */}
               {optionsDataLoaded && availableContracts.length > 0 && (
                 <div className="mt-3 p-3 rounded-lg bg-blue-500/10 border border-blue-500/20">
@@ -616,225 +724,263 @@ const Backtesting = () => {
               </div>
             </div>
 
-            {/* Chart Display Area */}
-            <div className="space-y-4">
-              {/* Stock Price Chart */}
-              <div className="h-[300px] bg-background/50 rounded-lg border border-border p-4">
-                {stockDataLoaded && chartBars.length > 0 ? (
-                  <div>
-                    <div className="flex items-center justify-between mb-3">
-                      <h3 className="text-sm font-semibold">Price Chart - {config.symbol}</h3>
-                      <Badge variant="outline">
-                        {chartBars.length} bars loaded
-                      </Badge>
-                    </div>
-                    <div className="h-[250px] overflow-hidden w-full">
-                      <LiveTradingViewChart
-                        ref={backtestChartRef}
-                        symbol={config.symbol}
-                        bars={chartBars}
-                        height={250}
-                      />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-full">
-                    <Database className="w-12 h-12 text-muted-foreground mb-3" />
-                    <p className="text-muted-foreground text-center">
-                      {dataLoading ? 'Fetching historical data...' : 
-                       'Fetch historical data to preview market data'}
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Equity Curve Chart */}
-              {equityCurve.length > 0 && (
-                <div className="h-[250px] bg-background/50 rounded-lg border border-border p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <h3 className="text-sm font-semibold">Equity Curve</h3>
-                    <Badge variant="outline">
-                      {trades.length} trades
-                    </Badge>
-                  </div>
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={equityCurve}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                      <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
-                      <YAxis stroke="hsl(var(--muted-foreground))" />
-                      <Tooltip 
-                        contentStyle={{ 
-                          backgroundColor: 'hsl(var(--card))',
-                          border: '1px solid hsl(var(--border))',
-                          borderRadius: '8px'
-                        }}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="equity" 
-                        stroke="#22c55e"
-                        strokeWidth={2}
-                        dot={false}
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              )}
-            </div>
-
-            {/* Data Stats or Metrics Grid */}
-            {stockDataLoaded && chartBars.length > 0 && !results && (
-              <div className="grid grid-cols-4 gap-4 mb-6">
-                {[
-                  { 
-                    label: "Total Bars", 
-                    value: chartBars.length.toLocaleString(), 
-                    positive: null 
-                  },
-                  { 
-                    label: "First Price", 
-                    value: chartBars[0]?.close ? `$${chartBars[0].close.toFixed(2)}` : 'N/A', 
-                    positive: null 
-                  },
-                  { 
-                    label: "Last Price", 
-                    value: chartBars[chartBars.length - 1]?.close ? 
-                      `$${chartBars[chartBars.length - 1].close.toFixed(2)}` : 'N/A', 
-                    positive: null 
-                  },
-                  { 
-                    label: "Price Change", 
-                    value: chartBars.length >= 2 && chartBars[0]?.close && chartBars[chartBars.length - 1]?.close ? 
-                      `${((chartBars[chartBars.length - 1].close - chartBars[0].close) / chartBars[0].close * 100).toFixed(2)}%` : 
-                      'N/A',
-                    positive: chartBars.length >= 2 && chartBars[0]?.close && chartBars[chartBars.length - 1]?.close ? 
-                      chartBars[chartBars.length - 1].close > chartBars[0].close : 
-                      null
-                  },
-                ].map((stat) => (
-                  <div key={stat.label} className="p-4 rounded-lg bg-secondary/50 border border-border">
-                    <p className="text-sm text-muted-foreground">{stat.label}</p>
-                    <p className={`text-2xl font-bold mt-1 ${
-                      stat.positive === true ? "text-success" :
-                      stat.positive === false ? "text-danger" : ""
-                    }`}>
-                      {stat.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Options Data Stats */}
-            {optionsData && !results && (
-              <div className="mb-6">
-                <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                  <Target className="w-5 h-5 text-orange-500" />
-                  Options Data Summary
-                </h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                    <p className="text-sm text-muted-foreground">Total Contracts</p>
-                    <p className="text-2xl font-bold mt-1 text-orange-500">
-                      {optionsData?.symbolsWithData || 0}
-                    </p>
-                  </div>
-                  <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                    <p className="text-sm text-muted-foreground">Total Bars</p>
-                    <p className="text-2xl font-bold mt-1 text-orange-500">
-                      {(optionsData?.totalBars || 0).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
-                
-                {/* Options symbols list */}
-                <div className="mt-4 p-3 rounded-lg bg-secondary/30 border border-border">
-                  <p className="text-sm font-medium mb-2">Loaded Contracts:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {availableContracts.slice(0, 6).map(symbol => (
-                      <Badge key={symbol} variant="outline" className="text-xs">
-                        {symbol}
-                      </Badge>
-                    ))}
-                    {availableContracts.length > 6 && (
-                      <Badge variant="outline" className="text-xs">
-                        +{availableContracts.length - 6} more
-                      </Badge>
+            {/* Conditional Display: Progress, BacktestResults, or Preview */}
+            {(dataFetchStep > 0 && dataFetchStep < 3) ? (
+              // Data fetching progress
+              <BacktestProgress
+                currentStep={dataFetchStep}
+                progress={dataFetchProgress}
+                statusMessage={dataFetchMessage}
+                steps={[
+                  { id: 1, title: 'Fetch Stock Data', status: dataFetchStep > 1 ? 'completed' : dataFetchStep === 1 ? 'active' : 'pending' },
+                  { id: 2, title: 'Fetch Options Data', status: dataFetchStep > 2 ? 'completed' : dataFetchStep === 2 ? 'active' : 'pending' },
+                  { id: 3, title: 'Start Backtest', status: dataFetchStep >= 3 ? 'completed' : 'pending' },
+                ]}
+              />
+            ) : loading ? (
+              // Backtest running progress
+              <BacktestProgress
+                currentStep={2}
+                progress={progress}
+                statusMessage={statusMessage}
+                steps={[
+                  { id: 1, title: 'Data Ready', status: 'completed' },
+                  { id: 2, title: 'Running Backtest', status: progress < 100 ? 'active' : 'completed' },
+                  { id: 3, title: 'Loading Results', status: progress >= 100 ? 'active' : 'pending' },
+                ]}
+              />
+            ) : metrics ? (
+              // Show results with error boundary
+              <BacktestErrorBoundary>
+                <BacktestResults 
+                  metrics={metrics}
+                  trades={trades}
+                  loading={false}
+                />
+              </BacktestErrorBoundary>
+            ) : (
+              <>
+                {/* Chart Display Area */}
+                <div className="space-y-4">
+                  {/* Stock Price Chart */}
+                  <div className="h-[300px] bg-background/50 rounded-lg border border-border p-4">
+                    {stockDataLoaded && chartBars.length > 0 ? (
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="text-sm font-semibold">Price Chart - {config.symbol}</h3>
+                          <Badge variant="outline">
+                            {chartBars.length} bars loaded
+                          </Badge>
+                        </div>
+                        <div className="h-[250px] overflow-hidden w-full">
+                          <LiveTradingViewChart
+                            ref={backtestChartRef}
+                            symbol={config.symbol}
+                            bars={chartBars}
+                            height={250}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center h-full">
+                        <Database className="w-12 h-12 text-muted-foreground mb-3" />
+                        <p className="text-muted-foreground text-center">
+                          {dataLoading ? 'Fetching historical data...' : 
+                           'Fetch historical data to preview market data'}
+                        </p>
+                      </div>
                     )}
                   </div>
-                </div>
-              </div>
-            )}
 
-            {/* Backtest Metrics Grid */}
-            {results && (
-              <div className="grid grid-cols-4 gap-4 mb-6">
-                {[
-                  { label: "Total Return", value: `${(results.totalReturn || 0) >= 0 ? '+' : ''}${(results.totalReturn || 0).toFixed(2)}%`, positive: (results.totalReturn || 0) >= 0 },
-                  { label: "Sharpe Ratio", value: (results.sharpeRatio || 0).toFixed(2), positive: (results.sharpeRatio || 0) > 0 },
-                  { label: "Max Drawdown", value: `-${Math.abs(results.maxDrawdown || 0).toFixed(2)}%`, positive: false },
-                  { label: "Win Rate", value: `${(results.winRate || 0).toFixed(1)}%`, positive: (results.winRate || 0) > 50 },
-                  { label: "Total Trades", value: (results.totalTrades || 0).toString(), positive: null },
-                  { label: "Avg Win", value: `$${Math.abs(results.avgWin || 0).toFixed(0)}`, positive: true },
-                  { label: "Avg Loss", value: `-$${Math.abs(results.avgLoss || 0).toFixed(0)}`, positive: false },
-                  { label: "Profit Factor", value: (results.profitFactor || 0).toFixed(2), positive: (results.profitFactor || 0) > 1 },
-                ].map((metric) => (
-                  <div key={metric.label} className="p-4 rounded-lg bg-secondary/50 border border-border">
-                    <p className="text-sm text-muted-foreground">{metric.label}</p>
-                    <p className={`text-2xl font-bold mt-1 ${
-                      metric.positive === true ? "text-success" :
-                      metric.positive === false ? "text-danger" : ""
-                    }`}>
-                      {metric.value}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Trade List */}
-            <h3 className="text-lg font-semibold mb-3">Trade History</h3>
-            <div className="space-y-2 max-h-[300px] overflow-y-auto">
-              {trades.length === 0 ? (
-                <div className="p-8 text-center text-muted-foreground">
-                  {loading ? 'Loading trades...' : 'No trades yet'}
+                  {/* Equity Curve Chart */}
+                  {equityCurve.length > 0 && (
+                    <div className="h-[250px] bg-background/50 rounded-lg border border-border p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="text-sm font-semibold">Equity Curve</h3>
+                        <Badge variant="outline">
+                          {legacyTrades.length} trades
+                        </Badge>
+                      </div>
+                      <ResponsiveContainer width="100%" height={200}>
+                        <LineChart data={equityCurve}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                          <XAxis dataKey="date" stroke="hsl(var(--muted-foreground))" />
+                          <YAxis stroke="hsl(var(--muted-foreground))" />
+                          <Tooltip 
+                            contentStyle={{ 
+                              backgroundColor: 'hsl(var(--card))',
+                              border: '1px solid hsl(var(--border))',
+                              borderRadius: '8px'
+                            }}
+                          />
+                          <Line 
+                            type="monotone" 
+                            dataKey="equity" 
+                            stroke="#22c55e"
+                            strokeWidth={2}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
-              ) : (
-                trades.map((trade, idx) => (
-                  <div key={idx} className="grid grid-cols-7 gap-3 p-3 rounded-lg bg-secondary/50 border border-border hover:bg-secondary transition-all cursor-pointer">
-                    <div className="col-span-2">
-                      <p className="text-sm font-medium">{trade.contract_symbol || trade.symbol}</p>
-                      <Badge variant="outline" className="mt-1 text-xs">{trade.option_type || trade.side}</Badge>
+
+                {/* Data Stats or Metrics Grid */}
+                {stockDataLoaded && chartBars.length > 0 && !results && (
+                  <div className="grid grid-cols-4 gap-4 mb-6">
+                    {[
+                      { 
+                        label: "Total Bars", 
+                        value: chartBars.length.toLocaleString(), 
+                        positive: null 
+                      },
+                      { 
+                        label: "First Price", 
+                        value: chartBars[0]?.close ? `$${chartBars[0].close.toFixed(2)}` : 'N/A', 
+                        positive: null 
+                      },
+                      { 
+                        label: "Last Price", 
+                        value: chartBars[chartBars.length - 1]?.close ? 
+                          `$${chartBars[chartBars.length - 1].close.toFixed(2)}` : 'N/A', 
+                        positive: null 
+                      },
+                      { 
+                        label: "Price Change", 
+                        value: chartBars.length >= 2 && chartBars[0]?.close && chartBars[chartBars.length - 1]?.close ? 
+                          `${((chartBars[chartBars.length - 1].close - chartBars[0].close) / chartBars[0].close * 100).toFixed(2)}%` : 
+                          'N/A',
+                        positive: chartBars.length >= 2 && chartBars[0]?.close && chartBars[chartBars.length - 1]?.close ? 
+                          chartBars[chartBars.length - 1].close > chartBars[0].close : 
+                          null
+                      },
+                    ].map((stat) => (
+                      <div key={stat.label} className="p-4 rounded-lg bg-secondary/50 border border-border">
+                        <p className="text-sm text-muted-foreground">{stat.label}</p>
+                        <p className={`text-2xl font-bold mt-1 ${
+                          stat.positive === true ? "text-success" :
+                          stat.positive === false ? "text-danger" : ""
+                        }`}>
+                          {stat.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Options Data Stats */}
+                {optionsData && !results && (
+                  <div className="mb-6">
+                    <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
+                      <Target className="w-5 h-5 text-orange-500" />
+                      Options Data Summary
+                    </h3>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                        <p className="text-sm text-muted-foreground">Total Contracts</p>
+                        <p className="text-2xl font-bold mt-1 text-orange-500">
+                          {optionsData?.symbolsWithData || 0}
+                        </p>
+                      </div>
+                      <div className="p-4 rounded-lg bg-orange-500/10 border border-orange-500/20">
+                        <p className="text-sm text-muted-foreground">Total Bars</p>
+                        <p className="text-2xl font-bold mt-1 text-orange-500">
+                          {(optionsData?.totalBars || 0).toLocaleString()}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Entry</p>
-                      <p className="text-sm">{new Date(trade.entry_timestamp || trade.entry_time).toLocaleTimeString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Exit</p>
-                      <p className="text-sm">{new Date(trade.exit_timestamp || trade.exit_time).toLocaleTimeString()}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">P&L</p>
-                      <p className={`text-sm font-medium ${(Number(trade.net_pnl) || Number(trade.pnl) || 0) >= 0 ? "text-success" : "text-danger"}`}>
-                        {(Number(trade.net_pnl) || Number(trade.pnl) || 0) >= 0 ? '+' : ''}${(Number(trade.net_pnl) || Number(trade.pnl) || 0).toFixed(0)}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-muted-foreground">Return</p>
-                      <p className={`text-sm font-medium ${(parseFloat(trade.return_pct) * 100) >= 0 ? "text-success" : "text-danger"}`}>
-                        {(parseFloat(trade.return_pct) * 100) >= 0 ? '+' : ''}{(parseFloat(trade.return_pct) * 100).toFixed(1)}%
-                      </p>
-                    </div>
-                    <div className="flex items-center">
-                      <Button variant="ghost" size="sm">
-                        <Eye className="w-4 h-4" />
-                      </Button>
+                    
+                    {/* Options symbols list */}
+                    <div className="mt-4 p-3 rounded-lg bg-secondary/30 border border-border">
+                      <p className="text-sm font-medium mb-2">Loaded Contracts:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {availableContracts.slice(0, 6).map(symbol => (
+                          <Badge key={symbol} variant="outline" className="text-xs">
+                            {symbol}
+                          </Badge>
+                        ))}
+                        {availableContracts.length > 6 && (
+                          <Badge variant="outline" className="text-xs">
+                            +{availableContracts.length - 6} more
+                          </Badge>
+                        )}
+                      </div>
                     </div>
                   </div>
-                ))
-              )}
-            </div>
+                )}
+
+                {/* Backtest Metrics Grid - Legacy */}
+                {results && (
+                  <div className="grid grid-cols-4 gap-4 mb-6">
+                    {[
+                      { label: "Total Return", value: `${(results.totalReturn || 0) >= 0 ? '+' : ''}${(results.totalReturn || 0).toFixed(2)}%`, positive: (results.totalReturn || 0) >= 0 },
+                      { label: "Sharpe Ratio", value: (results.sharpeRatio || 0).toFixed(2), positive: (results.sharpeRatio || 0) > 0 },
+                      { label: "Max Drawdown", value: `-${Math.abs(results.maxDrawdown || 0).toFixed(2)}%`, positive: false },
+                      { label: "Win Rate", value: `${(results.winRate || 0).toFixed(1)}%`, positive: (results.winRate || 0) > 50 },
+                      { label: "Total Trades", value: (results.totalTrades || 0).toString(), positive: null },
+                      { label: "Avg Win", value: `$${Math.abs(results.avgWin || 0).toFixed(0)}`, positive: true },
+                      { label: "Avg Loss", value: `-$${Math.abs(results.avgLoss || 0).toFixed(0)}`, positive: false },
+                      { label: "Profit Factor", value: (results.profitFactor || 0).toFixed(2), positive: (results.profitFactor || 0) > 1 },
+                    ].map((metric) => (
+                      <div key={metric.label} className="p-4 rounded-lg bg-secondary/50 border border-border">
+                        <p className="text-sm text-muted-foreground">{metric.label}</p>
+                        <p className={`text-2xl font-bold mt-1 ${
+                          metric.positive === true ? "text-success" :
+                          metric.positive === false ? "text-danger" : ""
+                        }`}>
+                          {metric.value}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                {/* Trade List - Legacy */}
+                <h3 className="text-lg font-semibold mb-3">Trade History</h3>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                  {legacyTrades.length === 0 ? (
+                    <div className="p-8 text-center text-muted-foreground">
+                      {loading ? 'Loading trades...' : 'No trades yet'}
+                    </div>
+                  ) : (
+                    legacyTrades.map((trade, idx) => (
+                      <div key={idx} className="grid grid-cols-7 gap-3 p-3 rounded-lg bg-secondary/50 border border-border hover:bg-secondary transition-all cursor-pointer">
+                        <div className="col-span-2">
+                          <p className="text-sm font-medium">{trade.contract_symbol || trade.symbol}</p>
+                          <Badge variant="outline" className="mt-1 text-xs">{trade.option_type || trade.side}</Badge>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Entry</p>
+                          <p className="text-sm">{new Date(trade.entry_timestamp || trade.entry_time).toLocaleTimeString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Exit</p>
+                          <p className="text-sm">{new Date(trade.exit_timestamp || trade.exit_time).toLocaleTimeString()}</p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">P&L</p>
+                          <p className={`text-sm font-medium ${(Number(trade.net_pnl) || Number(trade.pnl) || 0) >= 0 ? "text-success" : "text-danger"}`}>
+                            {(Number(trade.net_pnl) || Number(trade.pnl) || 0) >= 0 ? '+' : ''}${(Number(trade.net_pnl) || Number(trade.pnl) || 0).toFixed(0)}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">Return</p>
+                          <p className={`text-sm font-medium ${(parseFloat(trade.return_pct) * 100) >= 0 ? "text-success" : "text-danger"}`}>
+                            {(parseFloat(trade.return_pct) * 100) >= 0 ? '+' : ''}{(parseFloat(trade.return_pct) * 100).toFixed(1)}%
+                          </p>
+                        </div>
+                        <div className="flex items-center">
+                          <Button variant="ghost" size="sm">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </>
+            )}
           </Card>
         </div>
           </TabsContent>

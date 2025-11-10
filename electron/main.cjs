@@ -31,71 +31,10 @@ if (isDev) {
         ignoreInitial: true
       });
       
-      const triggerRebuild = async () => {
-        if (isRebuilding) {
-          rebuildQueued = true;
-          return;
-        }
-        
-        isRebuilding = true;
-        console.log('🔨 Source files changed, rebuilding...');
-        
-        try {
-          await new Promise((resolve, reject) => {
-            const buildProcess = spawn('npm', ['run', 'build'], {
-              cwd: process.cwd(),
-              stdio: 'pipe'
-            });
-            
-            buildProcess.stdout.on('data', (data) => {
-              if (devConfig.enableLogging) {
-                console.log(`Build: ${data.toString().trim()}`);
-              }
-            });
-            
-            buildProcess.stderr.on('data', (data) => {
-              console.error(`Build Error: ${data.toString().trim()}`);
-            });
-            
-            buildProcess.on('close', (code) => {
-              if (code === 0) {
-                console.log('✅ Build completed successfully');
-                resolve();
-              } else {
-                console.log(`❌ Build failed with code ${code}`);
-                reject(new Error(`Build failed with code ${code}`));
-              }
-            });
-          });
-          
-          // Force reload the main window if it exists
-          if (mainWindow && !mainWindow.isDestroyed()) {
-            console.log('🔄 Reloading Electron window...');
-            // Use reloadIgnoringCache to ensure fresh files are loaded
-            mainWindow.webContents.reloadIgnoringCache();
-            
-            // Also disable cache for subsequent loads
-            mainWindow.webContents.session.clearCache().then(() => {
-              console.log('💾 Browser cache cleared');
-            });
-          }
-          
-        } catch (error) {
-          console.error('Build error:', error.message);
-        } finally {
-          isRebuilding = false;
-          
-          // Handle queued rebuild
-          if (rebuildQueued) {
-            rebuildQueued = false;
-            setTimeout(triggerRebuild, 100);
-          }
-        }
-      };
-      
-      watcher.on('change', triggerRebuild);
-      watcher.on('add', triggerRebuild);
-      watcher.on('unlink', triggerRebuild);
+      // DISABLED: Hot reload rebuild causes blank screens
+      // Vite dev server handles hot reload automatically
+      console.log('✅ Using Vite dev server - hot reload handled by Vite');
+      console.log('⚠️  Manual rebuilds disabled to prevent blank screens');
       
     } else {
       // Standard electron-reload for non-Docker mode
@@ -103,13 +42,13 @@ if (isDev) {
         ...devConfig.reloadOptions,
         ignored: devConfig.ignoredPaths
       });
-    }
-    
-    if (devConfig.enableLogging) {
-      console.log('🔥 Electron hot reload enabled with enhanced logging');
-      console.log('📁 Watching paths:', devConfig.watchPaths);
-    } else {
-      console.log('🔥 Electron hot reload enabled');
+
+      if (devConfig.enableLogging) {
+        console.log('🔥 Electron hot reload enabled with enhanced logging');
+        console.log('📁 Watching paths:', devConfig.watchPaths);
+      } else {
+        console.log('🔥 Electron hot reload enabled');
+      }
     }
   } catch (error) {
     console.log('⚠️ Could not enable hot reload:', error.message);
@@ -517,16 +456,35 @@ function createWindow() {
   }
 
   // Load the app
-  if (isDev && !isDockerMode) {
-    // Traditional development mode with local Vite server
-    mainWindow.loadURL('http://localhost:8080');
-    mainWindow.webContents.openDevTools();
-  } else if (isDev && isDockerMode) {
-    // Docker development mode - no local Vite server, use built files
-    console.log('🐳 Running in Docker mode - using built files');
-    const indexPath = path.join(__dirname, '../dist/index.html');
-    mainWindow.loadFile(indexPath);
-    mainWindow.webContents.openDevTools();
+  if (isDev) {
+    // Development mode - ALWAYS use Vite dev server for hot reload
+    console.log('🔥 Development mode - connecting to Vite dev server');
+
+    // Wait for Vite to be ready
+    const checkVite = async () => {
+      for (let i = 0; i < 30; i++) {
+        try {
+          const response = await require('http').get('http://localhost:8080', () => {});
+          response.on('error', () => {});
+          console.log('✅ Vite dev server is ready');
+          return true;
+        } catch (e) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+      return false;
+    };
+
+    checkVite().then(ready => {
+      if (ready) {
+        mainWindow.loadURL('http://localhost:8080');
+        mainWindow.webContents.openDevTools();
+      } else {
+        console.error('❌ Vite dev server not ready, falling back to built files');
+        mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));
+        mainWindow.webContents.openDevTools();
+      }
+    });
   } else {
     // Production mode
     mainWindow.loadFile(path.join(__dirname, '../dist/index.html'));

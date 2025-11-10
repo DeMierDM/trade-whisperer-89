@@ -123,26 +123,53 @@ app.post('/api/options/bars', async (req, res) => {
   }
 });
 
-// Get historical stock data
+// Get historical stock data (aggregated OHLCV bars)
 app.post('/api/stocks/historical', async (req, res) => {
   try {
-    const { symbol, startDate, endDate } = req.body;
+    const { symbol, startDate, endDate, timeframe = '1m' } = req.body;
 
     if (!symbol || !startDate || !endDate) {
       return res.status(400).json({ error: 'symbol, startDate, and endDate are required' });
     }
 
-    console.log(`📊 API: Get historical stock data for ${symbol}`);
+    console.log(`📊 API: Get historical bars for ${symbol} (${timeframe})`);
 
-    const data = await busManager.getHistoricalStockData(symbol, startDate, endDate);
+    // Try to get pre-aggregated bars first
+    let data = await busManager.getHistoricalBars(symbol, timeframe, startDate, endDate);
+    let source = 'pre-aggregated-bars';
+
+    // If no aggregated bars available, fall back to raw trade data (for backwards compatibility)
+    if (!data || data.length === 0) {
+      console.log(`📊 No aggregated bars found, falling back to raw data for ${symbol}`);
+      const rawData = await busManager.getHistoricalStockData(symbol, startDate, endDate);
+      
+      // Convert raw trades to simple OHLCV format for compatibility
+      if (rawData && rawData.length > 0) {
+        // For now, just return the raw data in a compatible format
+        // In the future, we could aggregate on-the-fly here
+        data = rawData.map(trade => ({
+          bar_timestamp: trade.timestamp,
+          open: trade.price,
+          high: trade.price,
+          low: trade.price,
+          close: trade.price,
+          volume: trade.volume || 0,
+          trade_count: 1
+        }));
+        source = 'raw-trades-converted';
+      } else {
+        data = [];
+      }
+    }
 
     res.json({
       symbol,
+      timeframe,
       startDate,
       endDate,
       data,
       count: data.length,
-      source: 'data-bus-cache',
+      source,
       timestamp: new Date().toISOString()
     });
   } catch (error) {

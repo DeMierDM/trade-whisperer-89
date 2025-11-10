@@ -6,6 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const moment = require('moment-timezone');
 const { spawn } = require('child_process');
+const { globalRegistry } = require('./strategy-registry');
+const os = require('os'); // For hardware detection
 require('dotenv').config();
 
 const app = express();
@@ -237,7 +239,7 @@ function getHistoricalDateRange(dteStrategy) {
 // Get current optimal options data based on market conditions
 app.post('/api/fetch-current-options', async (req, res) => {
   try {
-    const { ticker, strikeRange = 5, strikeSpacing = 5 } = req.body;
+    const { ticker, strikeRange = 10, strikeSpacing = 1 } = req.body; // Changed defaults: range 10, spacing $1
     
     if (!ticker) {
       return res.status(400).json({ error: 'ticker parameter required' });
@@ -347,6 +349,34 @@ app.post('/api/fetch-current-options', async (req, res) => {
           const [, , , optionType, strikeString] = match;
           const strike = parseInt(strikeString) / 1000; // Convert back to dollars
           
+          // Calculate actual Greeks using Black-Scholes
+          const greeksCalculator = require('./utils/greeks-calculator');
+          const calculator = new greeksCalculator();
+          
+          // Calculate time to expiry - properly parse YYMMDD format
+          const moment = require('moment-timezone');
+          const expiryMoment = moment.tz(dateRange.expiryDate, 'YYMMDD', 'America/New_York')
+            .hour(16).minute(0).second(0).millisecond(0); // 4:00 PM ET
+          const expiryTime = expiryMoment.toDate();
+          const T = calculator.timeToExpiry(expiryTime, new Date(latestBar.t));
+          
+          // Calculate Greeks with mid price
+          const midPrice = latestBar.c;
+          const greeks = calculator.calculateAllGreeks(
+            currentPrice, // S - underlying price
+            strike,       // K - strike price
+            T,           // T - time to expiry
+            0.05,        // r - risk free rate
+            null,        // sigma - will be calculated from market price
+            optionType === 'C' ? 'call' : 'put', // option type
+            midPrice     // market price for IV calculation
+          );
+          
+          // Debug: Log strike vs underlying relationship and Greeks
+          const moneyness = (currentPrice / strike).toFixed(4);
+          const isATM = Math.abs(currentPrice - strike) <= 2;
+          console.log(`💰 [STRIKE DEBUG] S=${currentPrice.toFixed(2)}, K=${strike}, Moneyness=${moneyness}, ${isATM ? '🎯 ATM' : '📊 OTM'}, Delta=${greeks.delta.toFixed(3)}, Gamma=${greeks.gamma.toFixed(4)}, ${optionType}`);
+          
           formattedOptions.push({
             symbol: symbol,
             strike: `${strike}${optionType}`,
@@ -355,7 +385,7 @@ app.post('/api/fetch-current-options', async (req, res) => {
             last: latestBar.c.toFixed(2),
             vol: latestBar.v ? `${(latestBar.v / 1000).toFixed(1)}K` : "0K",
             oi: "N/A", // Not available in historical bars
-            delta: optionType === 'C' ? "0.50" : "-0.50", // Simplified delta
+            delta: greeks.delta.toFixed(3), // Actual calculated delta
             itm: optionType === 'C' ? strike < currentPrice : strike > currentPrice,
             timestamp: latestBar.t,
             expiry: dateRange.expiryDate
@@ -430,8 +460,8 @@ app.post('/api/fetch-historical-data', async (req, res) => {
       const timeframe = req.body.timeframe || '1min';
       const limit = req.body.limit || 1000;
       const strikeRange = req.body.strikeRange || 10;
-      const strikeSpacing = req.body.strikeSpacing || 5;
-      
+      const strikeSpacing = req.body.strikeSpacing || 1; // Changed from 5 to 1 for SPY $1 strike increments
+
       if (!ticker || !expiryDate) {
         return res.status(400).json({ error: 'ticker and expiryDate parameters required for options_bars_by_dte' });
       }
@@ -579,8 +609,8 @@ app.post('/api/fetch-historical-data', async (req, res) => {
       const ticker = req.body.ticker;
       const timeframe = req.body.timeframe || '1min';
       const strikeRange = req.body.strikeRange || 10;
-      const strikeSpacing = req.body.strikeSpacing || 5;
-      
+      const strikeSpacing = req.body.strikeSpacing || 1; // Changed from 5 to 1 for SPY $1 strike increments
+
       if (!ticker) {
         return res.status(400).json({ error: 'ticker parameter required for options_bars_by_date_range' });
       }
@@ -828,8 +858,8 @@ app.post('/api/fetch-historical-data', async (req, res) => {
       const timeframe = req.body.timeframe || '1min';
       const limit = req.body.limit || 1000;
       const strikeRange = req.body.strikeRange || 10;
-      const strikeSpacing = req.body.strikeSpacing || 5;
-      
+      const strikeSpacing = req.body.strikeSpacing || 1; // Changed from 5 to 1 for SPY $1 strike increments
+
       if (!ticker || !dteType) {
         return res.status(400).json({ error: 'ticker and dteType parameters required for options_bars_by_historical_dte' });
       }
@@ -1094,7 +1124,9 @@ app.post('/api/backtest/run', async (req, res) => {
       endDate,
       timeframe = '1Min',
       initialCapital = 10000,
-      parameters = {}
+      parameters = {},
+      strikeRange = 10,      // Number of dollars above/below ATM
+      strikeSpacing = 1      // Dollar spacing between strikes
     } = req.body;
 
     console.log(`\n🚀 [BACKTEST] Starting backtest:`);
@@ -1155,29 +1187,16 @@ app.post('/api/backtest/run', async (req, res) => {
       try {
         console.log(`\n📊 [BACKTEST ${backtestId}] Running backtest engine...`);
         
-        // Load strategy class
-        let StrategyClass;
-        if (strategy === 'HAVWAP-Rev-v2' || strategy === 'HAVWAP') {
-          const HAVWAPOptionsStrategy = require('./strategies/havwap-options.js');
-          StrategyClass = HAVWAPOptionsStrategy;
-        } else if (strategy === 'havwap-proper' || strategy === 'HAVWAP-Proper' || strategy === 'HAVWAP-Multi-Anchor') {
-          const HAVWAPProperStrategy = require('./strategies/havwap-proper.js');
-          StrategyClass = HAVWAPProperStrategy;
-        } else if (strategy === 'havwap-options') {
-          const HAVWAPOptionsStrategy = require('./strategies/havwap-options.js');
-          StrategyClass = HAVWAPOptionsStrategy;
-        } else if (strategy === 'rsi-roc-vwap-confluence') {
-          const RSIROCVWAPStrategy = require('./strategies/rsi-roc-vwap-confluence.js');
-          StrategyClass = RSIROCVWAPStrategy;
-        } else if (strategy === 'havwap-optimized') {
-          const HAVWAPOptimizedStrategy = require('./strategies/havwap-optimized.js');
-          StrategyClass = HAVWAPOptimizedStrategy;
-        } else if (strategy === 'vwap-execution-adaptive') {
-          const VWAPExecutionStrategy = require('./strategies/vwap-execution-adaptive.js');
-          StrategyClass = VWAPExecutionStrategy;
-        } else {
-          throw new Error(`Unknown strategy: ${strategy}`);
+        // Load strategy class using automatic registry
+        console.log(`🔍 [BACKTEST ${backtestId}] Loading strategy: ${strategy}`);
+        const validation = globalRegistry.validateStrategyForBacktest(strategy);
+        
+        if (!validation.valid) {
+          throw new Error(`Strategy validation failed: ${validation.error}. Available strategies: ${validation.availableStrategies?.join(', ')}`);
         }
+        
+        const StrategyClass = globalRegistry.getStrategy(strategy);
+        console.log(`✅ [BACKTEST ${backtestId}] Strategy loaded: ${validation.metadata.description} (${validation.metadata.riskLevel} Risk)`);
         
         // Instantiate strategy with parameters - pass ALL parameters from optimization
         const strategyInstance = new StrategyClass({
@@ -1191,8 +1210,8 @@ app.post('/api/backtest/run', async (req, res) => {
         });
         
         const BacktestEngine = require('./engine/backtest-engine.js');
-        const engine = new BacktestEngine(pool, alpacaClient);
-        
+        const engine = new BacktestEngine(pool, alpacaClient, { strikeRange, strikeSpacing });
+
         const result = await engine.runBacktest({
           backtestId,
           strategy: strategyInstance,
@@ -1200,7 +1219,9 @@ app.post('/api/backtest/run', async (req, res) => {
           startDate,
           endDate,
           timeframe,
-          initialCapital
+          initialCapital,
+          strikeRange,
+          strikeSpacing
         });
 
         console.log(`✅ [BACKTEST ${backtestId}] Backtest completed successfully`);
@@ -1488,24 +1509,30 @@ app.post('/api/optimize/universal', async (req, res) => {
   }
 });
 
-// Get available strategies endpoint
+// Get available strategies endpoint (using automatic registry)
 app.get('/api/strategies', async (req, res) => {
   try {
-    const strategies = [
-      'havwap-proper',
-      'HAVWAP-Rev-v2', 
-      'rsi-roc-vwap-confluence',
-      'havwap-optimized',
-      'vwap-execution-adaptive',
-      'havwap-options'
-    ];
+    // Get strategies from automatic registry
+    const availableStrategies = globalRegistry.getAvailableStrategies();
+    const strategiesWithMetadata = globalRegistry.getAllStrategiesWithMetadata();
+    
+    console.log(`📋 [STRATEGIES API] Returning ${availableStrategies.length} automatically discovered strategies`);
     
     res.json({
       success: true,
-      strategies: strategies,
-      message: 'Available strategies for optimization'
+      strategies: availableStrategies,
+      strategiesWithMetadata: strategiesWithMetadata.map(s => ({
+        name: s.name,
+        description: s.description,
+        riskLevel: s.riskLevel,
+        tradingStyle: s.tradingStyle,
+        maxRiskPerTrade: s.maxRiskPerTrade
+      })),
+      registryStats: globalRegistry.getRegistryStats(),
+      message: 'Available strategies from automatic discovery'
     });
   } catch (error) {
+    console.error('❌ [STRATEGIES API] Error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to get strategies',
@@ -1719,12 +1746,313 @@ app.post('/api/optimize/havwap', async (req, res) => {
   }
 });
 
+// Analysis routes for options/stock analysis before strategy development
+const analysisRoutes = require('./routes/analysis');
+app.use('/api/analyze', analysisRoutes);
+
+// Frequency analysis routes for signal parameter optimization
+const frequencyRoutes = require('./routes/frequency-analysis');
+app.use('/api/frequency', frequencyRoutes);
+
+// ==================== ENHANCED MULTI-WORKER ENDPOINTS ====================
+
+/**
+ * ENHANCED: Multi-worker parallel backtest endpoint
+ * POST /api/backtest/parallel
+ */
+app.post('/api/backtest/parallel', async (req, res) => {
+  try {
+    const {
+      strategy = 'iwm-optimized-v2-strategy',
+      symbol = 'IWM',
+      startDate,
+      endDate,
+      timeframe = '1Min',
+      initialCapital = 10000,
+      parameters = {},
+      strikeRange = 10,
+      strikeSpacing = 1,
+      enableParallel = true,      // NEW: Enable/disable parallel processing
+      maxWorkers = 8              // NEW: Override worker count
+    } = req.body;
+
+    console.log(`\n🏎️ [PARALLEL BACKTEST] Starting enhanced parallel backtest:`);
+    console.log(`   Strategy: ${strategy}`);
+    console.log(`   Symbol: ${symbol}`);
+    console.log(`   Date Range: ${startDate} to ${endDate}`);
+    console.log(`   Workers: ${enableParallel ? maxWorkers : 1}`);
+    console.log(`   Initial Capital: $${initialCapital.toLocaleString()}`);
+    
+    // Create backtest record (using existing schema)
+    const backtestResult = await pool.query(`
+      INSERT INTO backtests (
+        strategy_name, symbol, start_date, end_date, 
+        initial_capital, status, parameters, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      RETURNING id
+    `, [
+      strategy, 
+      symbol, 
+      startDate, 
+      endDate, 
+      initialCapital, 
+      'running', 
+      JSON.stringify({
+        ...parameters,
+        parallel: enableParallel, 
+        maxWorkers: maxWorkers,
+        hardwareOptimized: true
+      })
+    ]);
+
+    const backtestId = backtestResult.rows[0].id;
+
+    // Calculate performance estimate
+    const startMs = new Date(startDate).getTime();
+    const endMs = new Date(endDate).getTime();
+    const daysDiff = Math.max(1, (endMs - startMs) / (1000 * 60 * 60 * 24));
+    
+    // Enhanced estimation for parallel processing
+    const baseSeconds = daysDiff * 10;
+    const parallelSpeedup = enableParallel ? Math.min(maxWorkers * 0.8, 6) : 1; // 80% efficiency, max 6x
+    const estimatedSeconds = Math.ceil(baseSeconds / parallelSpeedup);
+
+    console.log(`⏱️  [PARALLEL BACKTEST] Estimated completion: ${estimatedSeconds}s (${parallelSpeedup.toFixed(1)}x speedup)`);
+
+    // Return immediate response
+    res.json({
+      success: true,
+      backtestId: backtestId,
+      status: 'running',
+      message: 'Enhanced parallel backtest initiated',
+      estimatedSeconds: estimatedSeconds,
+      estimatedCompletionTime: new Date(Date.now() + estimatedSeconds * 1000).toISOString(),
+      parallelConfig: {
+        enabled: enableParallel,
+        maxWorkers: maxWorkers,
+        estimatedSpeedup: parallelSpeedup,
+        hardwareOptimized: true
+      },
+      config: {
+        strategy,
+        symbol,
+        startDate,
+        endDate,
+        initialCapital
+      }
+    });
+
+    // Run enhanced backtest asynchronously
+    (async () => {
+      try {
+        console.log(`\n🏎️ [PARALLEL BACKTEST ${backtestId}] Starting enhanced execution...`);
+        
+        // Load and validate strategy
+        console.log(`🔍 [PARALLEL BACKTEST ${backtestId}] Loading strategy: ${strategy}`);
+        const validation = globalRegistry.validateStrategyForBacktest(strategy);
+        
+        if (!validation.valid) {
+          throw new Error(`Strategy validation failed: ${validation.error}`);
+        }
+        
+        const StrategyClass = globalRegistry.getStrategy(strategy);
+        console.log(`✅ [PARALLEL BACKTEST ${backtestId}] Strategy loaded: ${validation.metadata.description}`);
+        
+        // Create strategy instance with parameters
+        const strategyInstance = new StrategyClass({
+          ...parameters,
+          // Ensure required parameters exist
+          vwapPeriod: parameters.vwapPeriod || 60,
+          priceVwapThreshold: parameters.priceVwapThreshold || 0.0005,
+          slopeThreshold: parameters.slopeThreshold || 0.00001
+        });
+        
+        let result;
+        
+        if (enableParallel && daysDiff > 1) {
+          // Use multi-worker engine for longer backtests
+          console.log(`🏎️ [PARALLEL BACKTEST ${backtestId}] Using multi-worker engine with ${maxWorkers} workers`);
+          
+          try {
+            const MultiWorkerBacktestEngine = require('./workers/multi-worker-engine');
+            
+            const multiWorkerEngine = new MultiWorkerBacktestEngine(
+              pool, 
+              alpacaClient, 
+              { 
+                strikeRange, 
+                strikeSpacing,
+                STRATEGY_WORKERS: Math.min(maxWorkers, 8),
+                DATA_WORKERS: Math.min(4, Math.ceil(maxWorkers / 2)),
+                GREEKS_WORKERS: Math.min(4, Math.ceil(maxWorkers / 2))
+              }
+            );
+            
+            result = await multiWorkerEngine.runParallelBacktest({
+              backtestId,
+              strategy: strategyInstance,
+              symbol,
+              startDate,
+              endDate,
+              timeframe,
+              initialCapital,
+              strikeRange,
+              strikeSpacing
+            });
+            
+            // Cleanup multi-worker resources
+            await multiWorkerEngine.cleanup();
+            
+          } catch (multiWorkerError) {
+            console.error(`⚠️ [PARALLEL BACKTEST ${backtestId}] Multi-worker failed, falling back to standard engine:`, multiWorkerError.message);
+            
+            // Fallback to standard engine
+            const BacktestEngine = require('./engine/backtest-engine.js');
+            const engine = new BacktestEngine(pool, alpacaClient, { strikeRange, strikeSpacing });
+
+            result = await engine.runBacktest({
+              backtestId,
+              strategy: strategyInstance,
+              symbol,
+              startDate,
+              endDate,
+              timeframe,
+              initialCapital,
+              strikeRange,
+              strikeSpacing
+            });
+          }
+          
+        } else {
+          // Use standard engine for single day or when parallel disabled
+          console.log(`📊 [PARALLEL BACKTEST ${backtestId}] Using standard engine (parallel disabled or short timeframe)`);
+          
+          const BacktestEngine = require('./engine/backtest-engine.js');
+          const engine = new BacktestEngine(pool, alpacaClient, { strikeRange, strikeSpacing });
+
+          result = await engine.runBacktest({
+            backtestId,
+            strategy: strategyInstance,
+            symbol,
+            startDate,
+            endDate,
+            timeframe,
+            initialCapital,
+            strikeRange,
+            strikeSpacing
+          });
+        }
+
+        console.log(`✅ [PARALLEL BACKTEST ${backtestId}] Enhanced backtest completed successfully`);
+        console.log(`   Total Trades: ${result.performance?.totalTrades || 0}`);
+        console.log(`   Total Return: ${((result.performance?.totalReturn || 0) * 100).toFixed(2)}%`);
+        console.log(`   Win Rate: ${((result.performance?.winRate || 0) * 100).toFixed(1)}%`);
+        
+        if (result.multiWorker) {
+          console.log(`   🏎️ Multi-Worker Stats: ${result.multiWorker.workersUsed} workers, ${result.multiWorker.errors.length} errors`);
+        }
+        
+      } catch (error) {
+        console.error(`❌ [PARALLEL BACKTEST ${backtestId}] Error:`, error);
+        console.error(error.stack);
+        
+        // Update backtest record with error
+        await pool.query(`
+          UPDATE backtests 
+          SET status = 'failed', 
+              error_message = $1,
+              completed_at = NOW()
+          WHERE id = $2
+        `, [error.message, backtestId]);
+      }
+    })();
+    
+  } catch (error) {
+    console.error('❌ [PARALLEL BACKTEST] Error starting parallel backtest:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * ENHANCED: Get system performance metrics
+ * GET /api/system/performance
+ */
+app.get('/api/system/performance', async (req, res) => {
+  try {
+    // CPU information
+    const cpuCount = os.cpus().length;
+    const cpuModel = os.cpus()[0]?.model || 'Unknown';
+    const cpuSpeed = os.cpus()[0]?.speed || 0;
+    
+    // Memory information  
+    const totalMemory = os.totalmem();
+    const freeMemory = os.freemem();
+    const usedMemory = totalMemory - freeMemory;
+    
+    // Load average (1, 5, 15 minutes)
+    const loadAverage = os.loadavg();
+    
+    // Database connection pool stats
+    const dbStats = {
+      totalCount: pool.totalCount,
+      idleCount: pool.idleCount,
+      waitingCount: pool.waitingCount
+    };
+    
+    // Calculate optimal worker configuration for this system
+    const optimalConfig = {
+      recommendedStrategyWorkers: Math.min(cpuCount, 8),
+      recommendedDataWorkers: Math.min(Math.ceil(cpuCount / 2), 4),
+      recommendedGreeksWorkers: Math.min(Math.ceil(cpuCount / 2), 4),
+      maxMemoryPerWorker: Math.floor(totalMemory / cpuCount / (1024 * 1024 * 1024)) + 'GB',
+      parallelProcessingRecommended: cpuCount >= 4 && (usedMemory / totalMemory) < 0.8
+    };
+    
+    res.json({
+      hardware: {
+        cpuCores: cpuCount,
+        cpuModel: cpuModel,
+        cpuSpeed: `${(cpuSpeed / 1000).toFixed(1)} GHz`,
+        totalMemory: `${(totalMemory / (1024 * 1024 * 1024)).toFixed(1)} GB`,
+        freeMemory: `${(freeMemory / (1024 * 1024 * 1024)).toFixed(1)} GB`,
+        memoryUsage: `${((usedMemory / totalMemory) * 100).toFixed(1)}%`
+      },
+      performance: {
+        loadAverage1min: loadAverage[0].toFixed(2),
+        loadAverage5min: loadAverage[1].toFixed(2),
+        loadAverage15min: loadAverage[2].toFixed(2),
+        cpuUtilization: `${Math.min((loadAverage[0] / cpuCount) * 100, 100).toFixed(1)}%`
+      },
+      database: dbStats,
+      optimization: optimalConfig,
+      recommendations: {
+        enableParallel: optimalConfig.parallelProcessingRecommended,
+        maxWorkers: optimalConfig.recommendedStrategyWorkers,
+        memoryOptimization: usedMemory / totalMemory > 0.7 ? 'Consider reducing worker count or batch sizes' : 'Memory usage optimal for parallel processing',
+        cpuOptimization: loadAverage[0] > cpuCount ? 'System under high load - consider reducing parallel workers' : 'CPU available for parallel processing'
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ [SYSTEM PERFORMANCE] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+console.log(`🏎️ [ENHANCED] Multi-worker endpoints integrated:`);
+console.log(`   POST /api/backtest/parallel - Multi-worker parallel backtesting`);
+console.log(`   GET /api/system/performance - System performance metrics`);
+
 // Start server
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Backtesting Server running on port ${PORT}`);
   console.log(`📊 Dedicated to historical data processing and backtesting operations`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log(`🌐 Network access: http://0.0.0.0:${PORT}/health`);
+  console.log(`\n🏎️ [ENHANCED] Multi-worker parallel processing available:`);
+  console.log(`   POST /api/backtest/parallel - Parallel backtesting with ${os.cpus().length} cores`);
+  console.log(`   GET /api/system/performance - Hardware performance metrics`);
+  console.log(`   POST /api/system/benchmark - Performance benchmarking`);
 });
 
 module.exports = app;

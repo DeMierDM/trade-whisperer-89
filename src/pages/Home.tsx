@@ -18,158 +18,21 @@ const Home = () => {
   });
 
   useEffect(() => {
-    fetchAccountData();
-    
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchAccountData, 30000);
-    return () => clearInterval(interval);
+    // For local mode, just set some demo data instead of fetching from API
+    setAccountData({
+      balance: "$10,000.00",
+      dailyPnL: "+$125.50",
+      dailyPnLPercent: "+1.3%",
+      openPositions: "0",
+      positionsITM: "0 ITM",
+      winRate: "Local Mode",
+    });
+    setLoading(false);
   }, []);
 
-  const fetchAccountData = async () => {
-    try {
-      console.log('Fetching account data...');
-      
-      logApiCall(ENDPOINTS.MARKET_DATA, 'POST', { dataType: "account" });
-      
-      // Fetch account and positions data
-      const accountResponse = await fetch(ENDPOINTS.MARKET_DATA, {
-        method: "POST",
-        headers: REQUEST_CONFIG.DEFAULT_HEADERS,
-        body: JSON.stringify({ dataType: "account" }),
-      });
+  // Account data fetching removed for local mode - using demo data instead
 
-      if (!accountResponse.ok) {
-        throw new Error(`HTTP error! status: ${accountResponse.status}`);
-      }
-
-      const accountData = await accountResponse.json();
-      console.log('Account response:', accountData);
-
-      if (accountData?.error) {
-        throw new Error(accountData.error);
-      }
-
-      if (!accountData) {
-        throw new Error('No response from server');
-      }
-
-      if (accountData?.data) {
-        const account = accountData.data.account;
-        const positions = accountData.data.positions || [];
-        
-        console.log('Account data:', account);
-        console.log('Positions:', positions);
-
-        // Calculate daily P&L
-        const equity = parseFloat(account.equity || 0);
-        const lastEquity = parseFloat(account.last_equity || equity);
-        const dailyPnL = equity - lastEquity;
-        const dailyPnLPercent = lastEquity > 0 ? (dailyPnL / lastEquity) * 100 : 0;
-
-        // Count ITM positions (simplified - would need current prices for accurate calc)
-        const itmCount = positions.filter((p: any) => parseFloat(p.unrealized_pl || 0) > 0).length;
-
-        setAccountData({
-          balance: `$${parseFloat(account.equity || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          dailyPnL: `${dailyPnL >= 0 ? '+' : ''}$${Math.abs(dailyPnL).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`,
-          dailyPnLPercent: `${dailyPnL >= 0 ? '+' : ''}${dailyPnLPercent.toFixed(1)}%`,
-          openPositions: positions.length.toString(),
-          positionsITM: `${itmCount} ITM`,
-          winRate: "Calculating...",
-        });
-
-        // Fetch order history for win rate
-        fetchWinRate();
-      } else {
-        console.warn('No account data in response');
-        throw new Error('No account data returned from API');
-      }
-
-      setLoading(false);
-    } catch (error: any) {
-      console.error("Error fetching account data:", error);
-      toast({
-        title: "Error loading account data",
-        description: error.message || 'Failed to fetch account data. Check console for details.',
-        variant: "destructive",
-      });
-      setLoading(false);
-    }
-  };
-
-  const fetchWinRate = async () => {
-    try {
-      console.log('Fetching win rate...');
-
-      logApiCall(ENDPOINTS.MARKET_DATA, 'POST', { dataType: "orders" });
-
-      const response = await fetch(ENDPOINTS.MARKET_DATA, {
-        method: "POST",
-        headers: REQUEST_CONFIG.DEFAULT_HEADERS,
-        body: JSON.stringify({ dataType: "orders" }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const ordersResponse = await response.json();
-      console.log('Orders response:', ordersResponse);
-
-      if (ordersResponse?.error) {
-        throw new Error(ordersResponse.error);
-      }
-
-      if (ordersResponse?.data && Array.isArray(ordersResponse.data)) {
-        console.log('Processing orders:', ordersResponse.data.length);
-        const closedOrders = ordersResponse.data.filter((o: any) => o.status === 'filled');
-
-        // Group orders into trades (buy + sell pairs)
-        const trades: any[] = [];
-        const ordersBySymbol: { [key: string]: any[] } = {};
-
-        closedOrders.forEach((order: any) => {
-          const symbol = order.symbol;
-          if (!ordersBySymbol[symbol]) ordersBySymbol[symbol] = [];
-          ordersBySymbol[symbol].push(order);
-        });
-
-        // Calculate wins vs losses
-        let wins = 0;
-        let losses = 0;
-
-        Object.values(ordersBySymbol).forEach((orders: any[]) => {
-          orders.sort((a, b) => new Date(a.filled_at).getTime() - new Date(b.filled_at).getTime());
-
-          for (let i = 0; i < orders.length - 1; i += 2) {
-            const entry = orders[i];
-            const exit = orders[i + 1];
-
-            if (entry && exit) {
-              const entryPrice = parseFloat(entry.filled_avg_price || 0);
-              const exitPrice = parseFloat(exit.filled_avg_price || 0);
-              const pnl = entry.side === 'buy'
-                ? (exitPrice - entryPrice) * parseFloat(entry.filled_qty || 0)
-                : (entryPrice - exitPrice) * parseFloat(entry.filled_qty || 0);
-
-              if (pnl > 0) wins++;
-              else if (pnl < 0) losses++;
-            }
-          }
-        });
-
-        const totalTrades = wins + losses;
-        const winRate = totalTrades > 0 ? (wins / totalTrades) * 100 : 0;
-
-        setAccountData(prev => ({
-          ...prev,
-          winRate: `${winRate.toFixed(1)}%`,
-        }));
-      }
-    } catch (error: any) {
-      console.error("Error fetching win rate:", error);
-    }
-  };
+  // Win rate calculation removed for local mode - using demo data instead
 
   const stats = [
     { 

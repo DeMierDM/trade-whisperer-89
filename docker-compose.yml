@@ -110,6 +110,8 @@ services:
       context: ./docker/options-data-service
       dockerfile: Dockerfile.dev
     container_name: trading_options_data
+    env_file:
+      - .env.docker
     environment:
       PORT: 3003
       NODE_ENV: development

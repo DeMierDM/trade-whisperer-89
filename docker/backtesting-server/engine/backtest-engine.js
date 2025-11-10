@@ -14,6 +14,7 @@ const GreeksCalculator = require('../utils/greeks-calculator');
 const ContractSelector = require('../utils/contract-selector');
 const BarGreeksProcessor = require('../utils/bar-greeks-processor');
 const DataCacheManager = require('../utils/data-cache-manager');
+const { globalRegistry } = require('../strategy-registry');
 const moment = require('moment-timezone');
 const { v4: uuidv4 } = require('uuid');
 
@@ -185,6 +186,15 @@ class BacktestEngine {
       }
 
       const activeBacktestId = this.currentBacktest.id;
+
+      // 🔧 MULTI-DAY FIX: Detect multi-day requests and route to proper method
+      const isMultiDay = startDate !== endDate;
+      if (isMultiDay) {
+        console.log('🔄 Multi-day backtest detected - using day-by-day processing method');
+        return await this.runMultiDayBacktest(config);
+      }
+
+      console.log('📅 Single-day backtest - using standard processing method');
 
       // Reset state
       this.openPositions = [];
@@ -461,7 +471,8 @@ class BacktestEngine {
       const selectedContract = this.contractSelector.selectBestContract(
         filteredOptionChain, 
         criteria.optionType, 
-        criteria.targetDelta
+        criteria.targetDelta,
+        criteria  // Pass full criteria object including minDelta/maxDelta
       );
 
       if (!selectedContract) {
@@ -700,14 +711,26 @@ class BacktestEngine {
         }
 
         // Find bar at current timestamp
-        const optionBar = contractData.bars.find(b => {
+        let optionBar = contractData.bars.find(b => {
           const barTime = new Date(b.t);
           const currentTime = new Date(bar.t);
           return Math.abs(barTime - currentTime) < 60000; // Within 1 minute
         });
 
+        // 🔧 FIX: If no exact bar match, use the most recent bar for exit checking
         if (!optionBar || !optionBar.c || optionBar.c <= 0) {
-          continue; // Skip if no bar at this time or invalid price
+          const currentTime = new Date(bar.t);
+          const previousBars = contractData.bars
+            .filter(b => new Date(b.t) <= currentTime && b.c > 0)
+            .sort((a, b) => new Date(b.t) - new Date(a.t));
+          
+          if (previousBars.length > 0) {
+            optionBar = previousBars[0]; // Use most recent valid bar
+            console.log(`   🔄 [FALLBACK PRICE] Using ${position.contract_symbol} price $${optionBar.c} from ${optionBar.t} (no current bar)`);
+          } else {
+            console.log(`   ⚠️  No valid option data for ${position.contract_symbol} at ${bar.t} - skipping exit check`);
+            continue; // Only skip if absolutely no valid data exists
+          }
         }
 
         const currentPrice = parseFloat(optionBar.c);
@@ -736,6 +759,7 @@ class BacktestEngine {
         const exitDecision = strategy.shouldExit(position, currentPrice, bar.t);
 
         if (exitDecision.shouldExit) {
+          console.log(`   🚪 [STRATEGY EXIT] ${position.contract_symbol} - ${exitDecision.reason}`);
           // REALISTIC FILLS: Use low price for stop losses, close price for profit targets
           let exitPrice = currentPrice; // Default to close price
           if (exitDecision.reason && (exitDecision.reason.includes('STOP') || exitDecision.reason.includes('LOSS'))) {
@@ -763,6 +787,14 @@ class BacktestEngine {
     // Close positions
     for (const { position, exitDecision, currentPrice, exitGreeks } of positionsToClose) {
       const tradeResult = await this.closePosition(position, currentPrice, bar.t, exitDecision.reason, exitGreeks, backtestId);
+      
+      // CRITICAL FIX: Remove closed position from strategy's currentPositions array
+      if (tradeResult && tradeResult.closedPosition && strategy.currentPositions) {
+        strategy.currentPositions = strategy.currentPositions.filter(p => 
+          p.instance_id !== position.instance_id
+        );
+        console.log(`   🔄 Strategy positions updated: ${strategy.currentPositions.length}/${strategy.maxPositions} slots used`);
+      }
       
       // CRITICAL FIX: Update cash balance with trade P&L
       if (tradeResult && tradeResult.netPnL) {
@@ -906,7 +938,7 @@ class BacktestEngine {
     console.log(`   🔴 CLOSED: ${position.contract_symbol} x${position.quantity} @ $${exitPrice.toFixed(2)} | P&L: $${netPnL.toFixed(2)} (${(returnPct * 100).toFixed(1)}%) | Reason: ${closeReason}`);
 
     // CRITICAL FIX: Return the P&L so it can be applied to cash balance
-    return { netPnL, grossPnL, fees };
+    return { netPnL, grossPnL, fees, closedPosition };
   }
 
   /**
@@ -915,7 +947,11 @@ class BacktestEngine {
   async closeAllPositions(lastBar, backtestId) {
     let totalPnL = 0;
     
+    console.log(`🏁 [BACKTEST END] Closing ${this.openPositions.length} remaining positions at backtest end`);
+    
     for (const position of this.openPositions) {
+      console.log(`   💼 [FORCED CLOSE] ${position.contract_symbol} - held for ${((new Date(lastBar.t) - new Date(position.entry_timestamp)) / (1000 * 60)).toFixed(0)} minutes`);
+      
       const tradeResult = await this.closePosition(
         position,
         position.entry_price, // Use entry price as exit (conservative)
@@ -1631,20 +1667,50 @@ class BacktestEngine {
   }
 
   /**
-   * Get strategy class by name with better error handling
+   * Get strategy class by name using automatic strategy registry
    */
   getStrategyClass(strategyName) {
-    const strategyMap = {
-      'HAVWAP': require('../strategies/havwap-proper'),
-      'HAVWAP-Rev-v2': require('../strategies/havwap-proper'), // Fixed: Use existing strategy
-      'havwap-proper': require('../strategies/havwap-proper'),
-      'rsi-vwap-fusion': require('../strategies/rsi-vwap-fusion'),
-      'DefaultStrategy': require('../strategies/havwap-proper')
-    };
-    
-    const StrategyClass = strategyMap[strategyName] || strategyMap['DefaultStrategy'];
-    console.log(`   🔧 Loading strategy: ${strategyName} -> ${StrategyClass.name || 'Strategy'}`);
-    return StrategyClass;
+    try {
+      // Check if strategy exists in registry
+      if (globalRegistry.hasStrategy(strategyName)) {
+        const StrategyClass = globalRegistry.getStrategy(strategyName);
+        const metadata = globalRegistry.getStrategyMetadata(strategyName);
+        console.log(`   🔧 Loading strategy: ${strategyName} -> ${metadata.description} (${metadata.riskLevel} Risk)`);
+        return StrategyClass;
+      }
+
+      // Fallback mappings for legacy strategy names
+      const legacyMappings = {
+        'HAVWAP': 'havwap-proper',
+        'HAVWAP-Rev-v2': 'havwap-proper',
+        'conservative-rsi-vwap': 'small-account-rsi-vwap',
+        'aggressive-momentum': 'small-account-momentum', 
+        'selective-iv-reversion': 'small-account-iv-mean-reversion'
+      };
+
+      const mappedName = legacyMappings[strategyName];
+      if (mappedName && globalRegistry.hasStrategy(mappedName)) {
+        console.log(`   🔄 Mapping legacy strategy: ${strategyName} -> ${mappedName}`);
+        return globalRegistry.getStrategy(mappedName);
+      }
+
+      // If strategy not found, list available strategies
+      const availableStrategies = globalRegistry.getAvailableStrategies();
+      console.warn(`   ⚠️ Strategy '${strategyName}' not found. Available strategies:`, availableStrategies);
+      
+      // Return first available strategy as fallback
+      if (availableStrategies.length > 0) {
+        const fallbackStrategy = availableStrategies[0];
+        console.log(`   � Using fallback strategy: ${fallbackStrategy}`);
+        return globalRegistry.getStrategy(fallbackStrategy);
+      }
+
+      throw new Error(`No strategies available in registry`);
+
+    } catch (error) {
+      console.error(`   ❌ Error loading strategy '${strategyName}':`, error.message);
+      throw error;
+    }
   }
 
   /**
@@ -1678,6 +1744,146 @@ class BacktestEngine {
       }
     }
     return formatted;
+  }
+
+  /**
+   * Run multi-day backtest by processing each trading day individually and aggregating results
+   * This fixes the core issue where continuous date range processing failed for options data
+   */
+  async runMultiDayBacktest(config) {
+    console.log('🔧 Running multi-day backtest with individual day processing...');
+    console.log(`📅 Date range: ${config.startDate} to ${config.endDate}`);
+    
+    const weekdays = this.getWeekdays(config.startDate, config.endDate);
+    console.log(`📊 Processing ${weekdays.length} trading days individually`);
+    
+    let aggregatedResults = {
+      trades: [],
+      totalTrades: 0,
+      winningTrades: 0,
+      losingTrades: 0,
+      totalProfit: 0,
+      totalReturn: 0,
+      maxDrawdown: 0,
+      finalCapital: config.initialCapital || 10000,
+      dailyResults: []
+    };
+    
+    let currentCapital = config.initialCapital || 10000;
+    let runningCapital = currentCapital;
+    let peakCapital = currentCapital;
+    let maxDrawdownValue = 0;
+    
+    // Process each trading day individually
+    for (let i = 0; i < weekdays.length; i++) {
+      const dayDate = weekdays[i]; // This is already a string in 'YYYY-MM-DD' format
+      const dayStart = dayDate; // Use string directly
+      const dayEnd = dayStart; // Same day for 0DTE
+      
+      console.log(`\n📈 Processing day ${i + 1}/${weekdays.length}: ${dayStart}`);
+      
+      // Create single-day config
+      const dayConfig = {
+        ...config,
+        startDate: dayStart,
+        endDate: dayEnd,
+        initialCapital: runningCapital // Use running capital from previous days
+      };
+      
+      try {
+        // Run single-day backtest (uses the working individual day logic)
+        const dayResults = await this.runBacktest(dayConfig);
+        
+        if (dayResults && dayResults.trades && dayResults.trades.length > 0) {
+          console.log(`✅ Day ${dayStart}: ${dayResults.trades.length} trades, ${dayResults.winRate?.toFixed(1) || 0}% win rate, ${dayResults.totalReturn?.toFixed(2) || 0}% return`);
+          
+          // Aggregate trades with day identifier
+          const dayTrades = dayResults.trades.map(trade => ({
+            ...trade,
+            tradingDay: dayStart
+          }));
+          aggregatedResults.trades.push(...dayTrades);
+          
+          // Update aggregated metrics
+          aggregatedResults.totalTrades += dayResults.trades.length;
+          aggregatedResults.winningTrades += dayResults.winningTrades || 0;
+          aggregatedResults.losingTrades += dayResults.losingTrades || 0;
+          
+          // Update capital tracking
+          const dayProfit = (dayResults.totalReturn || 0) / 100 * runningCapital;
+          runningCapital += dayProfit;
+          aggregatedResults.totalProfit += dayProfit;
+          
+          // Track drawdown
+          if (runningCapital > peakCapital) {
+            peakCapital = runningCapital;
+          }
+          const currentDrawdown = (peakCapital - runningCapital) / peakCapital;
+          if (currentDrawdown > maxDrawdownValue) {
+            maxDrawdownValue = currentDrawdown;
+          }
+          
+          // Store daily results for analysis
+          aggregatedResults.dailyResults.push({
+            date: dayStart,
+            trades: dayResults.trades.length,
+            winRate: dayResults.winRate || 0,
+            dayReturn: dayResults.totalReturn || 0,
+            dayProfit: dayProfit,
+            runningCapital: runningCapital,
+            drawdown: currentDrawdown
+          });
+        } else {
+          console.log(`⚠️ Day ${dayStart}: No trades generated`);
+          aggregatedResults.dailyResults.push({
+            date: dayStart,
+            trades: 0,
+            winRate: 0,
+            dayReturn: 0,
+            dayProfit: 0,
+            runningCapital: runningCapital,
+            drawdown: maxDrawdownValue
+          });
+        }
+      } catch (error) {
+        console.error(`❌ Error processing day ${dayStart}:`, error.message);
+        // Continue with next day rather than failing entire backtest
+        aggregatedResults.dailyResults.push({
+          date: dayStart,
+          trades: 0,
+          winRate: 0,
+          dayReturn: 0,
+          dayProfit: 0,
+          runningCapital: runningCapital,
+          drawdown: maxDrawdownValue,
+          error: error.message
+        });
+      }
+    }
+    
+    // Calculate final aggregated metrics
+    aggregatedResults.finalCapital = runningCapital;
+    aggregatedResults.totalReturn = ((runningCapital - currentCapital) / currentCapital) * 100;
+    aggregatedResults.maxDrawdown = maxDrawdownValue * 100;
+    aggregatedResults.winRate = aggregatedResults.totalTrades > 0 ? 
+      (aggregatedResults.winningTrades / aggregatedResults.totalTrades) * 100 : 0;
+    
+    // Calculate additional performance metrics
+    const validDays = aggregatedResults.dailyResults.filter(day => day.trades > 0);
+    aggregatedResults.tradingDays = validDays.length;
+    aggregatedResults.avgTradesPerDay = validDays.length > 0 ? 
+      aggregatedResults.totalTrades / validDays.length : 0;
+    aggregatedResults.avgDailyReturn = validDays.length > 0 ? 
+      validDays.reduce((sum, day) => sum + day.dayReturn, 0) / validDays.length : 0;
+    
+    console.log('\n🎯 Multi-day backtest completed!');
+    console.log(`📊 Total Results: ${aggregatedResults.totalTrades} trades across ${aggregatedResults.tradingDays} trading days`);
+    console.log(`💰 Total Return: ${aggregatedResults.totalReturn.toFixed(2)}%`);
+    console.log(`🎲 Win Rate: ${aggregatedResults.winRate.toFixed(1)}%`);
+    console.log(`📈 Avg Trades/Day: ${aggregatedResults.avgTradesPerDay.toFixed(1)}`);
+    console.log(`📉 Max Drawdown: ${aggregatedResults.maxDrawdown.toFixed(2)}%`);
+    
+    return aggregatedResults;
   }
 
   /**

@@ -257,6 +257,77 @@ class SQLCacheLayer {
   }
 
   /**
+   * Store aggregated OHLCV bars
+   */
+  async storeBars(bars) {
+    if (!bars || bars.length === 0) return;
+
+    try {
+      const values = bars.map(bar => [
+        bar.symbol,
+        bar.timeframe,
+        bar.bar_timestamp,
+        bar.open,
+        bar.high,
+        bar.low,
+        bar.close,
+        bar.volume,
+        bar.trade_count,
+        bar.vwap
+      ]);
+
+      const placeholders = values.map((_, index) => {
+        const start = index * 10;
+        return `($${start + 1}, $${start + 2}, $${start + 3}, $${start + 4}, $${start + 5}, $${start + 6}, $${start + 7}, $${start + 8}, $${start + 9}, $${start + 10})`;
+      }).join(', ');
+
+      const flatValues = values.flat();
+
+      await this.pool.query(`
+        INSERT INTO bus_stock_bars (
+          symbol, timeframe, bar_timestamp, open, high, low, close, volume, trade_count, vwap
+        ) VALUES ${placeholders}
+        ON CONFLICT (symbol, timeframe, bar_timestamp) 
+        DO UPDATE SET
+          high = GREATEST(bus_stock_bars.high, EXCLUDED.high),
+          low = LEAST(bus_stock_bars.low, EXCLUDED.low),
+          close = EXCLUDED.close,
+          volume = bus_stock_bars.volume + EXCLUDED.volume,
+          trade_count = bus_stock_bars.trade_count + EXCLUDED.trade_count,
+          vwap = EXCLUDED.vwap
+      `, flatValues);
+
+      console.log(`📊 Stored ${bars.length} aggregated bars`);
+      
+    } catch (error) {
+      console.error('❌ Failed to store bars:', error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Get historical aggregated bars
+   */
+  async getHistoricalBars(symbol, timeframe, startDate, endDate) {
+    try {
+      const result = await this.pool.query(`
+        SELECT symbol, timeframe, bar_timestamp, open, high, low, close, volume, trade_count, vwap
+        FROM bus_stock_bars
+        WHERE symbol = $1 
+          AND timeframe = $2
+          AND bar_timestamp >= $3
+          AND bar_timestamp <= $4
+        ORDER BY bar_timestamp ASC
+      `, [symbol, timeframe, startDate, endDate]);
+
+      return result.rows;
+    } catch (error) {
+      console.error('❌ Failed to get historical bars:', error.message);
+      return [];
+    }
+  }
+
+  /**
    * Get cache statistics
    */
   async getStats() {

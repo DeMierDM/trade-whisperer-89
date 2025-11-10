@@ -18,6 +18,8 @@
  * - 0DTE auto-close at 3:50 PM ET
  */
 
+const moment = require('moment-timezone');
+
 class HAVWAPOptionsStrategy {
   constructor(params = {}) {
     this.name = 'HAVWAP Options';
@@ -28,9 +30,9 @@ class HAVWAPOptionsStrategy {
     this.slopeLookback = params.slopeLookback || 10; // Bars to calculate slope
     this.priceVwapThreshold = params.priceVwapThreshold || 0.0005; // RELAXED: 0.05% distance (was 0.2%)
     
-    // Option Selection Parameters
-    this.deltaTarget = params.deltaTarget || 0.30; // Target delta (30-delta)
-        this.minVolume = 1; // Min volume (contracts) - very permissive for 0DTE
+    // Option Selection Parameters - 🔧 FIXED: Use ATM delta instead of OTM 30-delta
+    this.deltaTarget = params.deltaTarget || 0.50; // Target 50-delta (ATM) for better sensitivity
+    this.minVolume = 1; // Min volume (contracts) - very permissive for 0DTE
     this.maxSpreadPct = params.maxSpreadPct || 15; // Max 15% spread (live mode)
     this.preferredDTE = params.preferredDTE || 0; // 0 = 0DTE
     
@@ -43,6 +45,12 @@ class HAVWAPOptionsStrategy {
     // Position Sizing
     this.maxPositions = params.maxPositions || 1; // Max concurrent positions
     this.contractsPerTrade = params.contractsPerTrade || 1; // Contracts per position
+    
+    console.log(`📊 [STRATEGY INIT] HAVWAP Options Strategy initialized with:`);
+    console.log(`   maxPositions: ${this.maxPositions}`);
+    console.log(`   deltaTarget: ${this.deltaTarget}`);
+    console.log(`   priceVwapThreshold: ${this.priceVwapThreshold}`);
+    console.log(`   slopeThreshold: ${this.slopeThreshold}`);
     
     // State
     this.vwapData = [];
@@ -63,13 +71,20 @@ class HAVWAPOptionsStrategy {
 
     bars.forEach((bar, index) => {
       const barTime = new Date(bar.t);
-      const barHour = barTime.getHours();
+      // CRITICAL: Use ET timezone for hourly reset, not UTC
+      const barTimeET = moment(barTime).tz('America/New_York');
+      const barHour = barTimeET.hours(); // Get hour in ET timezone
 
-      // Reset on new hour
+      // Reset on new hour (in ET timezone)
       if (barHour !== currentHour) {
         currentHour = barHour;
         cumulativePV = 0;
         cumulativeVolume = 0;
+        
+        // Debug log for hour transitions
+        if (index > 0) {
+          console.log(`   🕐 HAVWAP Reset: Hour ${currentHour}:00 ET (${barTimeET.format('YYYY-MM-DD HH:mm:ss')})`);
+        }
       }
 
       // Calculate typical price
@@ -159,8 +174,9 @@ class HAVWAPOptionsStrategy {
         sampleCount++;
       }
 
-      // CALL SIGNAL: Price below VWAP with positive slope (bullish reversal)
-      if (priceVsVWAPPct < -this.priceVwapThreshold && slope > this.slopeThreshold) {
+      // CALL SIGNAL: Price below VWAP (mean reversion - NO SLOPE REQUIREMENT)
+      // Strategy: When price drops below VWAP, expect mean reversion back up
+      if (priceVsVWAPPct < -this.priceVwapThreshold) {
         signals.push({
           timestamp: data.timestamp,
           signal_type: 'BUY_CALL',
@@ -178,12 +194,12 @@ class HAVWAPOptionsStrategy {
           target_delta: this.deltaTarget,
           option_type: 'CALL'
         });
-      } else if (priceVsVWAPPct < -this.priceVwapThreshold) {
         callOpportunities++;
       }
 
-      // PUT SIGNAL: Price above VWAP with negative slope (bearish reversal)
-      if (priceVsVWAPPct > this.priceVwapThreshold && slope < -this.slopeThreshold) {
+      // PUT SIGNAL: Price above VWAP (mean reversion - NO SLOPE REQUIREMENT)
+      // Strategy: When price rises above VWAP, expect mean reversion back down
+      if (priceVsVWAPPct > this.priceVwapThreshold) {
         signals.push({
           timestamp: data.timestamp,
           signal_type: 'BUY_PUT',
@@ -201,14 +217,13 @@ class HAVWAPOptionsStrategy {
           target_delta: -this.deltaTarget, // Negative for puts
           option_type: 'PUT'
         });
-      } else if (priceVsVWAPPct > this.priceVwapThreshold) {
         putOpportunities++;
       }
     });
 
     console.log(`\n   📈 Signal Summary:`);
-    console.log(`   Call opportunities (price below): ${callOpportunities}`);
-    console.log(`   Put opportunities (price above): ${putOpportunities}`);
+    console.log(`   Call signals (price < VWAP): ${callOpportunities}`);
+    console.log(`   Put signals (price > VWAP): ${putOpportunities}`);
     console.log(`   Total signals generated: ${signals.length}`);
 
     return signals;
@@ -230,37 +245,12 @@ class HAVWAPOptionsStrategy {
     const entryValue = position.entry_price * position.quantity * 100;
     const pnlPct = (currentValue - entryValue) / entryValue;
 
-    // 0DTE auto-close check
-    if (position.expiry_date) {
-      const expiryDate = new Date(position.expiry_date);
-      const today = new Date(currentTime);
-      
-      // If 0DTE (same day expiry)
-      if (expiryDate.toDateString() === today.toDateString()) {
-        const currentHour = current.getHours();
-        const currentMinute = current.getMinutes();
-        const currentTimeStr = `${currentHour.toString().padStart(2, '0')}:${currentMinute.toString().padStart(2, '0')}`;
-        
-        if (currentTimeStr >= this.zeroDTECloseTime) {
-          return { 
-            shouldExit: true, 
-            reason: 'ZERO_DTE_TIME_STOP', 
-            pnlPct: pnlPct 
-          };
-        }
-      }
+    // DEBUG: Log holding time vs max
+    if (holdingMinutes >= this.maxHoldingPeriod - 1) {
+      console.log(`   ⏱️  [EXIT DEBUG] ${position.contract_symbol}: holdingMinutes=${holdingMinutes.toFixed(1)}, maxHoldingPeriod=${this.maxHoldingPeriod}, pnlPct=${(pnlPct*100).toFixed(1)}%`);
     }
 
-    // Time stop
-    if (holdingMinutes >= this.maxHoldingPeriod) {
-      return { 
-        shouldExit: true, 
-        reason: 'TIME_STOP', 
-        pnlPct: pnlPct 
-      };
-    }
-
-    // Profit target
+    // PRIORITY 1: Profit target (exit winners ASAP)
     if (pnlPct >= this.profitTarget) {
       return { 
         shouldExit: true, 
@@ -269,13 +259,46 @@ class HAVWAPOptionsStrategy {
       };
     }
 
-    // Stop loss
+    // PRIORITY 2: Stop loss (cut losers)
     if (pnlPct <= -this.stopLoss) {
       return { 
         shouldExit: true, 
         reason: 'STOP_LOSS', 
         pnlPct: pnlPct 
       };
+    }
+
+    // PRIORITY 3: Time stop (respect max holding period)
+    if (holdingMinutes >= this.maxHoldingPeriod) {
+      return { 
+        shouldExit: true, 
+        reason: 'TIME_STOP', 
+        pnlPct: pnlPct 
+      };
+    }
+
+    // PRIORITY 4: 0DTE auto-close (only at end of day 3:50 PM ET)
+    if (position.expiry_date) {
+      const expiryDate = new Date(position.expiry_date);
+      const today = new Date(currentTime);
+      
+      // If 0DTE (same day expiry)
+      if (expiryDate.toDateString() === today.toDateString()) {
+        // Convert current time to ET for proper market hours comparison
+        const currentET = moment(current).tz('America/New_York');
+        const currentHourET = currentET.hours();
+        const currentMinuteET = currentET.minutes();
+        const currentTimeStr = `${currentHourET.toString().padStart(2, '0')}:${currentMinuteET.toString().padStart(2, '0')}`;
+        
+        // Close at 3:50 PM ET (15:50)
+        if (currentTimeStr >= this.zeroDTECloseTime) {
+          return { 
+            shouldExit: true, 
+            reason: 'ZERO_DTE_TIME_STOP', 
+            pnlPct: pnlPct 
+          };
+        }
+      }
     }
 
     return { 

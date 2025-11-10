@@ -81,8 +81,8 @@ class AlpacaClient {
     const {
       underlying,
       expiryDate,
-      strikeRange = 1, // Changed from 10 to 1 for tightest strike selection (±$5 for SPY with $5 spacing)
-      strikeSpacing = 5
+      strikeRange = 10, // Number of strikes above/below ATM
+      strikeSpacing = 1 // Changed from 5 to 1 for SPY $1 strike increments
     } = params;
 
     console.log(`📊 [ALPACA] Fetching option chain for ${underlying}`);
@@ -115,13 +115,19 @@ class AlpacaClient {
       startDate,
       endDate,
       timeframe = '1Min',
-      limit = 10000
+      limit = 10000,
+      volumeFilter = true,  // NEW: Enable volume filtering by default
+      minVolume = 10,       // NEW: Minimum volume threshold
+      minTradeCount = 1     // NEW: Minimum trade count threshold
     } = params;
 
-    console.log(`📊 [ALPACA] Fetching option bars for ${symbols.length} symbols`);
+    console.log(`📊 [ALPACA] Fetching option bars for ${symbols.length} symbols (ENHANCED OHLCV)`);
     console.log(`   Date range: ${startDate} to ${endDate}`);
+    console.log(`   Volume filtering: ${volumeFilter ? `enabled (min vol: ${minVolume}, min trades: ${minTradeCount})` : 'disabled'}`);
 
     const results = {};
+    let totalBarsProcessed = 0;
+    let totalBarsFiltered = 0;
     
     // Alpaca supports multi-symbol request with comma-separated symbols
     // But we'll chunk them to avoid URL length limits
@@ -131,6 +137,7 @@ class AlpacaClient {
       const chunk = symbols.slice(i, i + chunkSize);
       const symbolsParam = chunk.join(',');
       
+      // Historical options bars - NO feed parameter (feed only applies to latest quotes, not historical bars)
       const url = `${this.baseUrl}/v1beta1/options/bars?` +
         `symbols=${symbolsParam}&start=${startDate}&end=${endDate}&timeframe=${timeframe}&limit=${limit}`;
 
@@ -150,15 +157,61 @@ class AlpacaClient {
 
         const data = await response.json();
         
-        // Merge results
+        // Process and filter OHLCV data
         if (data.bars) {
-          Object.assign(results, data.bars);
+          for (const [symbol, bars] of Object.entries(data.bars)) {
+            if (!Array.isArray(bars) || bars.length === 0) continue;
+            
+            totalBarsProcessed += bars.length;
+            
+            // Apply volume and quality filtering if enabled
+            let filteredBars = bars;
+            if (volumeFilter) {
+              filteredBars = bars.filter(bar => {
+                // Volume filter: Remove bars with insufficient activity
+                const volume = parseInt(bar.v || 0);
+                const tradeCount = parseInt(bar.n || 0);
+                const hasValidPrice = bar.o > 0 && bar.h > 0 && bar.l > 0 && bar.c > 0;
+                
+                return volume >= minVolume && 
+                       tradeCount >= minTradeCount && 
+                       hasValidPrice &&
+                       bar.h >= bar.l && // Sanity check: high >= low
+                       bar.o <= bar.h && bar.o >= bar.l && // Open within range
+                       bar.c <= bar.h && bar.c >= bar.l;   // Close within range
+              });
+              
+              totalBarsFiltered += (bars.length - filteredBars.length);
+            }
+            
+            // Enhance bars with calculated fields for backtesting
+            const enhancedBars = filteredBars.map(bar => ({
+              ...bar,
+              // Add mid price for better fill simulation
+              mid: (parseFloat(bar.h) + parseFloat(bar.l)) / 2,
+              // Add VWAP if not present (fallback to close price)
+              vwap: bar.vw || bar.c,
+              // Normalize numeric fields
+              o: parseFloat(bar.o),
+              h: parseFloat(bar.h),
+              l: parseFloat(bar.l),
+              c: parseFloat(bar.c),
+              v: parseInt(bar.v || 0),
+              n: parseInt(bar.n || 0),
+              // Add quality score based on volume and spread
+              qualityScore: this.calculateBarQualityScore(bar)
+            }));
+            
+            if (enhancedBars.length > 0) {
+              results[symbol] = enhancedBars;
+            }
+          }
         }
 
-        console.log(`   ✓ Fetched chunk ${i / chunkSize + 1} (${chunk.length} symbols)`);
+        console.log(`   ✓ Processed chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(symbols.length / chunkSize)} (${chunk.length} symbols)`);
         
-        // INCREASED delay to respect rate limits (Alpaca has 200 requests/minute limit)
-        await new Promise(resolve => setTimeout(resolve, 500)); // 500ms delay instead of 100ms
+        // Respect rate limits (200 requests/minute for indicative feed)
+        await new Promise(resolve => setTimeout(resolve, 350)); // 350ms delay for safety
         
       } catch (error) {
         console.error(`❌ [ALPACA] Error fetching option bars chunk:`, error.message);
@@ -166,7 +219,10 @@ class AlpacaClient {
     }
 
     const totalBars = Object.values(results).reduce((sum, bars) => sum + (bars?.length || 0), 0);
-    console.log(`✅ [ALPACA] Total option bars fetched: ${totalBars} across ${Object.keys(results).length} contracts`);
+    console.log(`✅ [ALPACA] Enhanced OHLCV processing complete:`);
+    console.log(`   📊 Total bars fetched: ${totalBars} across ${Object.keys(results).length} contracts`);
+    console.log(`   🧹 Bars processed: ${totalBarsProcessed}, filtered out: ${totalBarsFiltered}`);
+    console.log(`   📈 Data quality: ${volumeFilter ? 'Volume filtering enabled' : 'No filtering'}`);
 
     return results;
   }
@@ -181,8 +237,8 @@ class AlpacaClient {
       underlying,
       expiryDate,
       centerStrike,
-      strikeRange = 1, // Changed from 10 to 1 for tightest strike selection (±$5 for SPY with $5 spacing)
-      strikeSpacing = 5
+      strikeRange = 10, // Number of strikes above/below ATM
+      strikeSpacing = 1 // Changed from 5 to 1 for SPY $1 strike increments
     } = params;
 
     if (!centerStrike) {
@@ -215,6 +271,50 @@ class AlpacaClient {
     console.log(`✅ [ALPACA] Generated ${symbols.length} option symbols for ${underlying} ${expiryDate}`);
 
     return symbols;
+  }
+
+  /**
+   * Calculate quality score for an option bar (0-100)
+   * Higher scores indicate better data quality for backtesting
+   * @param {Object} bar - OHLCV bar data
+   * @returns {number} Quality score (0-100)
+   */
+  calculateBarQualityScore(bar) {
+    let score = 0;
+    
+    const volume = parseInt(bar.v || 0);
+    const tradeCount = parseInt(bar.n || 0);
+    const spread = parseFloat(bar.h) - parseFloat(bar.l);
+    const price = parseFloat(bar.c);
+    
+    // Volume component (40 points max)
+    if (volume >= 100) score += 40;
+    else if (volume >= 50) score += 30;
+    else if (volume >= 20) score += 20;
+    else if (volume >= 10) score += 10;
+    
+    // Trade count component (30 points max)
+    if (tradeCount >= 10) score += 30;
+    else if (tradeCount >= 5) score += 20;
+    else if (tradeCount >= 2) score += 15;
+    else if (tradeCount >= 1) score += 10;
+    
+    // Spread/volatility component (20 points max)
+    const spreadPercent = price > 0 ? (spread / price) * 100 : 0;
+    if (spreadPercent <= 2) score += 20;      // Tight spread
+    else if (spreadPercent <= 5) score += 15;  // Reasonable spread
+    else if (spreadPercent <= 10) score += 10; // Wide spread
+    else if (spreadPercent <= 20) score += 5;  // Very wide spread
+    
+    // Data consistency component (10 points max)
+    const hasVWAP = bar.vw && parseFloat(bar.vw) > 0;
+    const priceConsistency = bar.o > 0 && bar.h >= bar.l && 
+                            bar.o >= bar.l && bar.o <= bar.h &&
+                            bar.c >= bar.l && bar.c <= bar.h;
+    if (hasVWAP && priceConsistency) score += 10;
+    else if (priceConsistency) score += 5;
+    
+    return Math.min(100, Math.max(0, score));
   }
 
   /**

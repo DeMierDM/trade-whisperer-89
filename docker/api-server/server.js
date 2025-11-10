@@ -274,10 +274,10 @@ app.post('/api/fetch-market-data', async (req, res) => {
     // Handle different data types
     if (dataType === 'bars') {
       const tf = timeframe || '5Min';
-      // Try without feed parameter first, then fallback to iex if needed
-      const url = `${baseUrl}/v2/stocks/${symbol}/bars?start=${start}&end=${end}&timeframe=${tf}&limit=10000&adjustment=all`;
+      // Use IEX feed (free) instead of SIP data since live account doesn't have SIP subscription
+      const url = `${baseUrl}/v2/stocks/${symbol}/bars?start=${start}&end=${end}&timeframe=${tf}&limit=10000&adjustment=all&feed=iex`;
 
-      console.log('📈 Fetching bars (default feed):', url);
+      console.log('📈 Fetching bars (IEX feed - free):', url);
 
       const response = await fetch(url, {
         headers: {
@@ -288,8 +288,32 @@ app.post('/api/fetch-market-data', async (req, res) => {
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Alpaca error:', errorText);
-        return res.status(response.status).json({ error: errorText });
+        console.error('❌ Alpaca error (trying IEX feed):', errorText);
+        
+        // If IEX also fails, try with older date range (avoid real-time data restrictions)
+        const olderStart = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString(); // 7 days ago
+        const olderEnd = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(); // 1 day ago
+        
+        const fallbackUrl = `${baseUrl}/v2/stocks/${symbol}/bars?start=${olderStart}&end=${olderEnd}&timeframe=${tf}&limit=10000&adjustment=all&feed=iex`;
+        console.log('📈 Fallback: Fetching historical bars (1 day old):', fallbackUrl);
+        
+        const fallbackResponse = await fetch(fallbackUrl, {
+          headers: {
+            'APCA-API-KEY-ID': apiKey,
+            'APCA-API-SECRET-KEY': apiSecret,
+          },
+        });
+        
+        if (!fallbackResponse.ok) {
+          const fallbackErrorText = await fallbackResponse.text();
+          console.error('❌ Fallback also failed:', fallbackErrorText);
+          return res.status(response.status).json({ error: errorText + ' | Fallback: ' + fallbackErrorText });
+        }
+        
+        const fallbackData = await fallbackResponse.json();
+        const fallbackBarCount = fallbackData.bars?.length || 0;
+        console.log(`✅ Fallback succeeded: Received ${fallbackBarCount} historical bars`);
+        return res.json({ data: fallbackData });
       }
 
       const data = await response.json();
@@ -368,21 +392,61 @@ app.post('/api/fetch-market-data', async (req, res) => {
         console.error('❌ Could not fetch current stock price:', error.message);
       }
 
-      // Filter for ATM options and 0DTE expiry
+      // Filter for ATM options and multiple DTE (current business day + next 2 business days)
+      function getNextBusinessDay(date, daysToAdd = 0) {
+        const result = new Date(date);
+        let addedDays = 0;
+        
+        while (addedDays < daysToAdd) {
+          result.setDate(result.getDate() + 1);
+          // Skip weekends (0 = Sunday, 6 = Saturday)
+          if (result.getDay() !== 0 && result.getDay() !== 6) {
+            addedDays++;
+          }
+        }
+        return result;
+      }
+
+      function formatDateForOptions(date) {
+        return date.getFullYear().toString().slice(-2) + 
+               (date.getMonth() + 1).toString().padStart(2, '0') + 
+               date.getDate().toString().padStart(2, '0'); // YYMMDD format
+      }
+
       const today = new Date();
-      const todayStr = today.getFullYear().toString().slice(-2) + 
-                     (today.getMonth() + 1).toString().padStart(2, '0') + 
-                     today.getDate().toString().padStart(2, '0'); // YYMMDD format
+      const todayStr = formatDateForOptions(today);
+      const tomorrow = getNextBusinessDay(today, 1);
+      const tomorrowStr = formatDateForOptions(tomorrow);
+      const dayAfter = getNextBusinessDay(today, 2);
+      const dayAfterStr = formatDateForOptions(dayAfter);
+
+      const targetExpiries = [todayStr, tomorrowStr, dayAfterStr];
+      console.log('📊 Looking for options with expiries:', targetExpiries.join(', '));
       
-      console.log('📊 Looking for 0DTE options with expiry:', todayStr);
+      // Debug: Log first 5 contract expiries to see what's available
+      const availableExpiries = [...new Set(contracts.map(c => c.expiration_date?.replace(/-/g, '').slice(-6)).filter(Boolean))].sort();
+      console.log('📊 Available expiry dates in contracts:', availableExpiries.slice(0, 10).join(', '));
       
       let filteredContracts = contracts.filter(contract => {
-        // Filter for 0DTE (today's expiry)
         const expiry = contract.expiration_date?.replace(/-/g, '').slice(-6); // Get YYMMDD
-        return expiry === todayStr;
+        return targetExpiries.includes(expiry);
       });
 
-      console.log(`📊 Found ${filteredContracts.length} 0DTE contracts`);
+      console.log(`📊 Found ${filteredContracts.length} contracts for next 3 business days`);
+      
+      // If no contracts found for our target dates, let's try the nearest available expiries
+      if (filteredContracts.length === 0 && availableExpiries.length > 0) {
+        console.log('📊 No contracts found for target dates, using nearest available expiries');
+        const nearestExpiries = availableExpiries.slice(0, 3); // Take first 3 available expiries
+        console.log('📊 Using nearest expiries:', nearestExpiries.join(', '));
+        
+        filteredContracts = contracts.filter(contract => {
+          const expiry = contract.expiration_date?.replace(/-/g, '').slice(-6);
+          return nearestExpiries.includes(expiry);
+        });
+        
+        console.log(`📊 Found ${filteredContracts.length} contracts using nearest expiries`);
+      }
 
       // If we have current stock price, filter for ATM options (within $10 of current price)
       if (currentStockPrice && filteredContracts.length > 0) {
@@ -398,17 +462,25 @@ app.post('/api/fetch-market-data', async (req, res) => {
         }
       }
 
-      // Sort by distance from current price and take top 20
+      // Sort by expiry date first, then by distance from current price
       if (currentStockPrice) {
         filteredContracts.sort((a, b) => {
+          // First sort by expiry date (earlier first)
+          const expiryA = a.expiration_date?.replace(/-/g, '').slice(-6);
+          const expiryB = b.expiration_date?.replace(/-/g, '').slice(-6);
+          if (expiryA !== expiryB) {
+            return expiryA.localeCompare(expiryB);
+          }
+          
+          // Then sort by distance from current price
           const distanceA = Math.abs(parseFloat(a.strike_price) - currentStockPrice);
           const distanceB = Math.abs(parseFloat(b.strike_price) - currentStockPrice);
           return distanceA - distanceB;
         });
       }
 
-      // Take top 20 contracts for quotes
-      const selectedContracts = filteredContracts.slice(0, 20);
+      // Take top 60 contracts (20 per expiry day) for quotes
+      const selectedContracts = filteredContracts.slice(0, 60);
       console.log(`📊 Selected ${selectedContracts.length} contracts for quotes`);
       
       if (selectedContracts.length > 0) {
@@ -526,9 +598,9 @@ app.post('/api/fetch-market-data', async (req, res) => {
         return res.status(400).json({ error: 'symbols parameter required for options_greeks' });
       }
 
-      const greeksUrl = `${marketDataBaseUrl}/v1beta1/options/snapshots?symbols=${symbols}`;
+      const greeksUrl = `${marketDataBaseUrl}/v1beta1/options/snapshots?symbols=${symbols}&feed=indicative`;
 
-      console.log('📊 Fetching options Greeks from Market Data API:', greeksUrl);
+      console.log('📊 Fetching options Greeks from Market Data API (indicative feed):', greeksUrl);
       console.log('📊 Requesting Greeks for symbols:', symbols);
 
       const response = await fetch(greeksUrl, {
@@ -630,11 +702,12 @@ app.post('/api/fetch-market-data', async (req, res) => {
         console.log(`📊 Generated ${optionSymbols.length} option symbols for ${ticker} expiry ${expiryDate}`);
         console.log('📊 Sample symbols:', optionSymbols.slice(0, 6));
         
-        // STEP 3: Fetch historical options bars for generated symbols
+        // STEP 3: Fetch historical options bars for generated symbols 
+        // Note: Historical bars don't support feed=indicative, only real-time quotes do
         const symbolsParam = optionSymbols.join(',');
         const optionsBarsUrl = `${marketDataBaseUrl}/v1beta1/options/bars?symbols=${encodeURIComponent(symbolsParam)}&timeframe=${timeframe}&start=${start}&end=${end}&limit=${limit}&sort=asc`;
         
-        console.log('📊 Step 3: Fetching historical options bars');
+        console.log('📊 Step 3: Fetching historical options bars (indicative feed)');
         console.log('📊 URL length:', optionsBarsUrl.length);
         console.log('📊 Requesting data for', optionSymbols.length, 'option contracts');
         
@@ -843,6 +916,59 @@ app.post('/api/fetch-market-data', async (req, res) => {
           date_range: { start: startDate, end: endDate }
         }
       });
+    }
+
+    // FIXED: Implement missing account dataType
+    if (dataType === 'account') {
+      console.log('👤 Fetching account information');
+      
+      const accountBaseUrl = 'https://api.alpaca.markets';
+      const accountUrl = `${accountBaseUrl}/v2/account`;
+
+      const response = await fetch(accountUrl, {
+        headers: {
+          'APCA-API-KEY-ID': apiKey,
+          'APCA-API-SECRET-KEY': apiSecret,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Account API error:', errorText);
+        return res.status(response.status).json({ error: errorText });
+      }
+
+      const data = await response.json();
+      console.log('✅ Account data retrieved successfully');
+      return res.json({ data });
+    }
+
+    // FIXED: Implement missing orders dataType
+    if (dataType === 'orders') {
+      console.log('📋 Fetching orders history');
+      
+      const ordersBaseUrl = 'https://api.alpaca.markets';
+      // Get orders from last 30 days by default
+      const after = start || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+      const until = end || new Date().toISOString();
+      const ordersUrl = `${ordersBaseUrl}/v2/orders?status=all&limit=500&after=${after}&until=${until}`;
+
+      const response = await fetch(ordersUrl, {
+        headers: {
+          'APCA-API-KEY-ID': apiKey,
+          'APCA-API-SECRET-KEY': apiSecret,
+        },
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('❌ Orders API error:', errorText);
+        return res.status(response.status).json({ error: errorText });
+      }
+
+      const data = await response.json();
+      console.log(`✅ Retrieved ${data.length || 0} orders`);
+      return res.json({ data });
     }
 
     res.status(400).json({ error: 'Invalid dataType' });
@@ -1533,6 +1659,67 @@ server.listen(PORT, () => {
   console.log(`🚀 Trading API server running on http://localhost:${PORT}`);
   console.log(`📊 Health check: http://localhost:${PORT}/health`);
   console.log(`📈 Market data: http://localhost:${PORT}/api/fetch-market-data`);
+});
+
+// Historical stock bars endpoint - aggregates from bus_stock_data
+app.post('/api/historical-bars', async (req, res) => {
+  try {
+    const { symbol, startDate, endDate, timeframe = '1m' } = req.body;
+
+    console.log(`📊 Historical bars requested: ${symbol} (${startDate} to ${endDate})`);
+
+    if (!symbol || !startDate || !endDate) {
+      return res.status(400).json({ error: 'Missing required parameters: symbol, startDate, endDate' });
+    }
+
+    // Query raw trade data from bus_stock_data
+    const query = `
+      SELECT
+        symbol,
+        date_trunc('minute', timestamp) as bar_time,
+        (array_agg(price ORDER BY timestamp))[1] as open,
+        MAX(price) as high,
+        MIN(price) as low,
+        (array_agg(price ORDER BY timestamp DESC))[1] as close,
+        SUM(volume) as volume,
+        COUNT(*) as trade_count
+      FROM bus_stock_data
+      WHERE symbol = $1
+        AND data_type = 'trade'
+        AND timestamp >= $2
+        AND timestamp <= $3
+      GROUP BY symbol, bar_time
+      ORDER BY bar_time ASC
+    `;
+
+    const result = await pool.query(query, [symbol, startDate, endDate]);
+
+    const bars = result.rows.map(row => ({
+      bar_timestamp: row.bar_time,
+      open: parseFloat(row.open),
+      high: parseFloat(row.high),
+      low: parseFloat(row.low),
+      close: parseFloat(row.close),
+      volume: parseInt(row.volume) || 0,
+      trade_count: parseInt(row.trade_count) || 0
+    }));
+
+    console.log(`✅ Returned ${bars.length} bars for ${symbol}`);
+
+    res.json({
+      symbol,
+      timeframe,
+      startDate,
+      endDate,
+      data: bars,
+      count: bars.length,
+      source: 'aggregated-from-trades'
+    });
+
+  } catch (error) {
+    console.error('❌ Error fetching historical bars:', error);
+    res.status(500).json({ error: 'Failed to fetch historical bars', details: error.message });
+  }
 });
 
 // Graceful shutdown

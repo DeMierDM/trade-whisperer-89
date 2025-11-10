@@ -352,10 +352,7 @@ export function useSharedBusData(
       onError: (error) => onErrorRef.current?.(error),
       onConnected: () => {
         onConnectedRef.current?.();
-        toastRef.current({
-          title: 'Data Bus Connected',
-          description: `Connected to centralized data bus (${debouncedChannels.length} channels)`,
-        });
+        // Toast removed to prevent UI spam on reconnections
       },
       onDisconnected: () => onDisconnectedRef.current?.()
     });

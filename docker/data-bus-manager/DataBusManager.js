@@ -8,6 +8,7 @@ const RequestDeduplicator = require('./RequestDeduplicator');
 const SQLCacheLayer = require('./SQLCacheLayer');
 const StockDataChannel = require('./StockDataChannel');
 const OptionsDataChannel = require('./OptionsDataChannel');
+const BarAggregator = require('./BarAggregator');
 
 class DataBusManager extends EventEmitter {
   constructor(config) {
@@ -29,6 +30,9 @@ class DataBusManager extends EventEmitter {
       flushInterval: config.sqlFlushInterval || 5000
     });
 
+    // Initialize bar aggregator for OHLCV bars
+    this.barAggregator = new BarAggregator(this.sqlCache);
+
     // Initialize data channels
     this.stockChannel = new StockDataChannel(
       this,
@@ -45,6 +49,15 @@ class DataBusManager extends EventEmitter {
     // Subscribe SQL cache to all data for automatic caching
     this.on('stock.*', (channel, data) => {
       this.sqlCache.handleStockUpdate(channel, data);
+      
+      // If this is trade data, also send to bar aggregator
+      if (channel.includes('trade') && data) {
+        if (Array.isArray(data)) {
+          data.forEach(trade => this.barAggregator.onTradeReceived(trade));
+        } else {
+          this.barAggregator.onTradeReceived(data);
+        }
+      }
     });
 
     this.on('options.*', (channel, data) => {
@@ -145,6 +158,13 @@ class DataBusManager extends EventEmitter {
    */
   async getHistoricalOptionsData(symbol, startDate, endDate) {
     return this.sqlCache.getHistoricalOptions(symbol, startDate, endDate);
+  }
+
+  /**
+   * Get historical aggregated bars (OHLCV)
+   */
+  async getHistoricalBars(symbol, timeframe, startDate, endDate) {
+    return this.sqlCache.getHistoricalBars(symbol, timeframe, startDate, endDate);
   }
 
   /**

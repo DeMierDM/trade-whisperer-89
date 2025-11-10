@@ -57,24 +57,54 @@ class GreeksCalculator {
    * @param {Date|string} currentDate - Current date/time (bar timestamp for backtesting)
    * @returns {number} Time to expiry in years (annualized)
    */
-  timeToExpiry(expiryDate, currentDate = new Date()) {
+  /**
+   * Determine if a given date is during daylight saving time for US Eastern Time
+   * DST runs from 2nd Sunday in March to 1st Sunday in November
+   */
+  isDaylightSavingTime(date) {
+    const year = date.getUTCFullYear();
+    
+    // Find 2nd Sunday in March
+    const marchFirst = new Date(year, 2, 1); // March 1st
+    const marchFirstDay = marchFirst.getDay(); // 0 = Sunday
+    const dstStart = new Date(year, 2, 8 + (7 - marchFirstDay) % 7); // 2nd Sunday
+    
+    // Find 1st Sunday in November  
+    const novFirst = new Date(year, 10, 1); // November 1st
+    const novFirstDay = novFirst.getDay(); // 0 = Sunday
+    const dstEnd = new Date(year, 10, 1 + (7 - novFirstDay) % 7); // 1st Sunday
+    
+    // Convert input date to local time for comparison
+    const localDate = new Date(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+    
+    return localDate >= dstStart && localDate < dstEnd;
+  }
+
+  timeToExpiry(expiryDate, currentTime) {
     const expiry = new Date(expiryDate);
-    const current = new Date(currentDate);
+    const current = new Date(currentTime || Date.now());
     
-    // Market close is 4:00 PM ET (16:00)
-    // For proper 0DTE calculation, we need to:
-    // 1. Extract the date from expiry
-    // 2. Set time to 16:00 (4:00 PM)
-    // 3. Calculate difference from current bar time
+    // Log the inputs for debugging
+    console.log(`[GreeksCalculator] timeToExpiry called with:`);
+    console.log(`  Expiry Date: ${expiry.toISOString()}`);
+    console.log(`  Current Time: ${current.toISOString()}`);
     
-    // Create expiry datetime at market close (4:00 PM)
-    // Use UTC to avoid timezone issues - assumes both dates are in same timezone
-    const expiryAtClose = new Date(
+    // Create expiry datetime at market close (4:00 PM ET)
+    // CRITICAL FIX: Handle both backtesting (historical) and live trading properly
+    // Market close is 4:00 PM ET = 21:00 UTC (during standard time) or 20:00 UTC (during daylight time)
+    // For backtesting, we need to use the correct UTC offset for the historical date
+    
+    // Determine if the expiry date was during daylight saving time
+    const year = expiry.getUTCFullYear();
+    const isDST = this.isDaylightSavingTime(expiry);
+    const utcHour = isDST ? 20 : 21; // 4 PM ET = 20 UTC (DST) or 21 UTC (Standard)
+    
+    const expiryAtClose = new Date(Date.UTC(
       expiry.getUTCFullYear(),
       expiry.getUTCMonth(),
       expiry.getUTCDate(),
-      16, 0, 0, 0 // 4:00 PM
-    );
+      utcHour, 0, 0, 0
+    ));
     
     const millisecondsPerYear = 365.25 * 24 * 60 * 60 * 1000;
     const timeMs = expiryAtClose - current;
@@ -86,15 +116,15 @@ class GreeksCalculator {
     
     if (timeMs > 0) {
       const T = timeMs / millisecondsPerYear;
-      // For debugging 0DTE:
-      // const hoursRemaining = timeMs / (1000 * 60 * 60);
-      // console.log(`Time to expiry: ${hoursRemaining.toFixed(2)} hours = ${T.toFixed(6)} years`);
+      const hoursRemaining = timeMs / (1000 * 60 * 60);
+      console.log(`⏰ [TIME DEBUG] Current: ${current.toISOString()}, Expiry: ${expiryAtClose.toISOString()}, Hours: ${hoursRemaining.toFixed(2)}, T: ${T.toFixed(6)}`);
       return T;
     }
     
-    // If already expired or at expiry, use 1 minute minimum to prevent division by zero
-    const minTime = (1 / 60 / 24 / 365.25); // 1 minute in years (~0.000002)
-    return minTime;
+    // If already expired, contracts should have no theoretical value
+    // Return 0 to indicate expiry - calling code should handle this case
+    console.log(`⚠️ [EXPIRED CONTRACT] Current: ${current.toISOString()}, Expiry: ${expiryAtClose.toISOString()}, timeMs: ${timeMs} - CONTRACT EXPIRED`);
+    return 0;
   }
 
   /**
@@ -215,6 +245,9 @@ class GreeksCalculator {
       return intrinsic > 0 ? (optionType.toUpperCase()[0] === 'C' ? 1 : -1) : 0;
     }
 
+    // DISABLED: Let Black-Scholes handle all cases for now to get dynamic Greeks
+    // if (T < 0.000029) { ... }
+
     const d1 = (Math.log(S / K) + (r + sigma * sigma / 2) * T) / (sigma * Math.sqrt(T));
 
     const type = optionType.toUpperCase();
@@ -232,6 +265,9 @@ class GreeksCalculator {
    */
   gamma(S, K, T, r, sigma) {
     if (T <= 0) return 0;
+
+    // DISABLED: Let Black-Scholes handle all cases for now to get dynamic Greeks
+    // if (T < 0.000029) { ... }
 
     const d1 = (Math.log(S / K) + (r + sigma * sigma / 2) * T) / (sigma * Math.sqrt(T));
     return this.normPDF(d1) / (S * sigma * Math.sqrt(T));
@@ -303,6 +339,9 @@ class GreeksCalculator {
    * @returns {Object} All Greeks and theoretical price
    */
   calculateAllGreeks(S, K, T, r, sigma, optionType, marketPrice = null) {
+    // DEBUG: Log all inputs to Black-Scholes calculation
+    console.log(`🧮 [BLACK-SCHOLES INPUT] S=${S?.toFixed(2)}, K=${K}, T=${T?.toFixed(6)} (${(T * 365.25 * 24 * 60)?.toFixed(1)} min), r=${r?.toFixed(3)}, marketPrice=${marketPrice?.toFixed(2)}, type=${optionType}`);
+    
     // If market price provided but no sigma, calculate IV
     if (marketPrice && !sigma) {
       sigma = this.impliedVolatility(marketPrice, S, K, T, optionType, r);
@@ -313,14 +352,24 @@ class GreeksCalculator {
       sigma = 0.30; // Default 30% IV
     }
 
+    const delta = this.delta(S, K, T, r, sigma, optionType);
+    const gamma = this.gamma(S, K, T, r, sigma);
+    const theta = this.theta(S, K, T, r, sigma, optionType);
+    const vega = this.vega(S, K, T, r, sigma);
+    const rho = this.rho(S, K, T, r, sigma, optionType);
+    const theoreticalPrice = this.blackScholesPrice(S, K, T, r, sigma, optionType);
+    
+    // DEBUG: Log calculated Greeks
+    console.log(`📊 [CALCULATED GREEKS] Delta=${delta?.toFixed(4)}, Gamma=${gamma?.toFixed(4)}, Theta=${theta?.toFixed(4)}, Vega=${vega?.toFixed(4)}, IV=${sigma?.toFixed(3)}, TheoPrice=${theoreticalPrice?.toFixed(2)}`);
+    
     return {
-      delta: this.delta(S, K, T, r, sigma, optionType),
-      gamma: this.gamma(S, K, T, r, sigma),
-      theta: this.theta(S, K, T, r, sigma, optionType),
-      vega: this.vega(S, K, T, r, sigma),
-      rho: this.rho(S, K, T, r, sigma, optionType),
+      delta,
+      gamma,
+      theta,
+      vega,
+      rho,
       impliedVolatility: sigma,
-      theoreticalPrice: this.blackScholesPrice(S, K, T, r, sigma, optionType),
+      theoreticalPrice,
       timeToExpiry: T,
       intrinsicValue: this.intrinsicValue(S, K, optionType)
     };
