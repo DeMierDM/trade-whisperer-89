@@ -1,50 +1,21 @@
 {
   "name": "Trade Whisperer Development",
   "dockerComposeFile": "../docker-compose.yml",
-  "service": "codespace-dev",
-  "workspaceFolder": "/workspace",
+  "service": "frontend",
+  "workspaceFolder": "/workspaces/trade-whisperer-89",
+  "shutdownAction": "stopCompose",
+  
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
     "ghcr.io/devcontainers/features/node:1": {
       "version": "18"
     },
-    "ghcr.io/devcontainers/features/git:1": {}
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "dockerDashComposeVersion": "v2"
+    },
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
   },
-  "forwardPorts": [
-    8080,
-    3001,
-    3002,
-    3003,
-    3004,
-    5432,
-    6379
-  ],
-  "portsAttributes": {
-    "8080": {
-      "label": "Frontend (React)",
-      "onAutoForward": "openBrowser"
-    },
-    "3001": {
-      "label": "Trading API"
-    },
-    "3002": {
-      "label": "Backtesting API"
-    },
-    "3003": {
-      "label": "Options Data API"
-    },
-    "3004": {
-      "label": "Data Bus WebSocket"
-    },
-    "5432": {
-      "label": "PostgreSQL"
-    },
-    "6379": {
-      "label": "Redis"
-    }
-  },
-  "postCreateCommand": "npm install",
-  "postStartCommand": "docker-compose up -d && npm run dev",
+
   "customizations": {
     "vscode": {
       "extensions": [
@@ -52,13 +23,48 @@
         "bradlc.vscode-tailwindcss",
         "esbenp.prettier-vscode",
         "ms-vscode.vscode-json",
-        "ms-azuretools.vscode-docker"
+        "ms-python.python",
+        "ms-vscode.vscode-eslint"
       ],
       "settings": {
-        "typescript.preferences.quoteStyle": "double",
+        "typescript.preferences.includePackageJsonAutoImports": "on",
         "editor.formatOnSave": true,
         "editor.defaultFormatter": "esbenp.prettier-vscode"
       }
     }
+  },
+
+  "forwardPorts": [8080, 3001, 3002, 3003, 3004, 5433, 6379],
+  "portsAttributes": {
+    "8080": {
+      "label": "Trade Whisperer Frontend",
+      "onAutoForward": "openBrowser"
+    },
+    "3001": {
+      "label": "API Server"
+    },
+    "3002": {
+      "label": "Backtesting Server"
+    },
+    "3003": {
+      "label": "Options Data Service"
+    },
+    "3004": {
+      "label": "Data Bus Manager"
+    },
+    "5433": {
+      "label": "PostgreSQL Database"
+    },
+    "6379": {
+      "label": "Redis Cache"
+    }
+  },
+
+  "postCreateCommand": "npm install && chmod +x setup-workspace.sh",
+  "postStartCommand": "docker-compose up -d",
+
+  "remoteUser": "node",
+  "containerEnv": {
+    "NODE_ENV": "development"
   }
 }
