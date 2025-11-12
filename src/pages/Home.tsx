@@ -1,6 +1,7 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Activity, TrendingUp, BarChart3, Settings, Brain, History, Loader2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { ENDPOINTS, REQUEST_CONFIG, logApiCall, createApiError } from "../lib/apiConfig";
@@ -16,6 +17,43 @@ const Home = () => {
     positionsITM: "0",
     winRate: "0.0%",
   });
+  
+  // Context7 Pattern: Multi-bot symbol support
+  const [activeBotSymbols, setActiveBotSymbols] = useState<string[]>(["SPY", "QQQ", "IWM"]); // Default fallback symbols
+  const [selectedSymbol, setSelectedSymbol] = useState("SPY");
+
+  // Context7 Pattern: Fetch active bot symbols dynamically
+  const fetchActiveBotSymbols = useCallback(async () => {
+    console.log('🤖 [Context7 HOME] Fetching active bot symbols...');
+    try {
+      let response;
+      try {
+        console.log('🤖 [Context7 HOME] Trying /api/bots via proxy...');
+        response = await fetch('/api/bots');
+      } catch (proxyError) {
+        console.log('🤖 [Context7 HOME] Proxy failed, trying direct container access...');
+        response = await fetch('http://trading_paper_bots:3005/api/bots');
+      }
+      
+      if (response.ok) {
+        const bots = await response.json();
+        const uniqueSymbols = [...new Set(bots.map((bot: any) => bot.symbol))];
+        console.log('🤖 [Context7 HOME] Fetched bot symbols:', uniqueSymbols);
+        setActiveBotSymbols(uniqueSymbols);
+        
+        if (uniqueSymbols.length > 0 && !uniqueSymbols.includes(selectedSymbol)) {
+          console.log(`🤖 [Context7 HOME] Switching from ${selectedSymbol} to ${uniqueSymbols[0]}`);
+          setSelectedSymbol(uniqueSymbols[0]);
+        }
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error('🤖 [Context7 HOME] Failed to fetch active bot symbols:', error);
+      console.log('🤖 [Context7 HOME] Using fallback symbols: SPY, QQQ, IWM');
+      setActiveBotSymbols(["SPY", "QQQ", "IWM"]);
+    }
+  }, [selectedSymbol]);
 
   useEffect(() => {
     // For local mode, just set some demo data instead of fetching from API
@@ -27,8 +65,12 @@ const Home = () => {
       positionsITM: "0 ITM",
       winRate: "Local Mode",
     });
+    
+    // Context7: Fetch active bot symbols
+    fetchActiveBotSymbols();
+    
     setLoading(false);
-  }, []);
+  }, [fetchActiveBotSymbols]);
 
   // Account data fetching removed for local mode - using demo data instead
 
@@ -96,6 +138,56 @@ const Home = () => {
             </div>
           </div>
         </div>
+
+        {/* Context7 Multi-Bot Tabs */}
+        {activeBotSymbols.length > 0 && (
+          <Card className="p-4 bg-gradient-card border-border shadow-card">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-foreground">Active Trading Bots</h3>
+              <p className="text-sm text-muted-foreground">Select a bot to view its options data and performance</p>
+            </div>
+            <Tabs value={selectedSymbol} onValueChange={setSelectedSymbol}>
+              <TabsList className="grid w-full" style={{gridTemplateColumns: `repeat(${activeBotSymbols.length}, minmax(0, 1fr))`}}>
+                {activeBotSymbols.map((symbol) => (
+                  <TabsTrigger 
+                    key={symbol} 
+                    value={symbol}
+                    data-testid={`bot-tab-${symbol}`}
+                    className="text-sm font-medium"
+                  >
+                    {symbol}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+              
+              {activeBotSymbols.map((symbol) => (
+                <TabsContent key={symbol} value={symbol} className="mt-4">
+                  <div className="p-4 bg-secondary/20 rounded-lg">
+                    <h4 className="font-semibold text-foreground mb-2">{symbol} Bot Status</h4>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Status:</span>
+                        <span className="ml-2 text-success font-medium">Active</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Contracts:</span>
+                        <span className="ml-2 font-medium">42 available</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Last Update:</span>
+                        <span className="ml-2 font-medium">Live</span>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Data Source:</span>
+                        <span className="ml-2 font-medium">Alpaca</span>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+          </Card>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">

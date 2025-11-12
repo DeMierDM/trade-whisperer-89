@@ -1,0 +1,47 @@
+{
+  "summary": {
+    "totalTests": 3,
+    "passed": 0,
+    "failed": 3,
+    "inconclusive": 0
+  },
+  "results": [
+    {
+      "testId": "firefox-single-day-oct-15",
+      "status": "FAILED",
+      "dateConfig": {
+        "start": "2024-10-15",
+        "end": "2024-10-15",
+        "label": "Single Day Oct 15"
+      },
+      "browserName": "firefox",
+      "error": "Waiting for element to be located By(xpath, //*[contains(text(), \"TradingView\")])\nWait timed out after 30423ms",
+      "timestamp": "2025-10-26T21:02:41.144Z"
+    },
+    {
+      "testId": "firefox-single-day-oct-16",
+      "status": "FAILED",
+      "dateConfig": {
+        "start": "2024-10-16",
+        "end": "2024-10-16",
+        "label": "Single Day Oct 16"
+      },
+      "browserName": "firefox",
+      "error": "Waiting for element to be located By(xpath, //*[contains(text(), \"TradingView\")])\nWait timed out after 30432ms",
+      "timestamp": "2025-10-26T21:03:17.363Z"
+    },
+    {
+      "testId": "firefox-single-day-oct-17",
+      "status": "FAILED",
+      "dateConfig": {
+        "start": "2024-10-17",
+        "end": "2024-10-17",
+        "label": "Single Day Oct 17"
+      },
+      "browserName": "firefox",
+      "error": "Waiting for element to be located By(xpath, //*[contains(text(), \"TradingView\")])\nWait timed out after 30419ms",
+      "timestamp": "2025-10-26T21:03:53.480Z"
+    }
+  ],
+  "timestamp": "2025-10-26T21:03:58.357Z"
+}

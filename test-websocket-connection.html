@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Connection Test</title>
+</head>
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+
+    <script>
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+
+        function log(message) {
+            console.log(message);
+            messagesDiv.innerHTML += '<div>' + new Date().toISOString() + ': ' + message + '</div>';
+        }
+
+        // Test WebSocket connection to API server
+        const wsUrl = 'ws://localhost:3001/ws?symbols=SPY,QQQ,IWM';
+        log('Attempting to connect to: ' + wsUrl);
+
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = function(event) {
+            log('✅ WebSocket connected successfully!');
+            statusDiv.textContent = 'Connected';
+            statusDiv.style.color = 'green';
+            
+            // Send subscription message
+            const subscribeMessage = {
+                action: 'subscribe',
+                symbols: ['SPY', 'QQQ', 'IWM']
+            };
+            log('Sending subscription: ' + JSON.stringify(subscribeMessage));
+            ws.send(JSON.stringify(subscribeMessage));
+        };
+
+        ws.onmessage = function(event) {
+            log('📨 Received: ' + event.data);
+        };
+
+        ws.onerror = function(error) {
+            log('❌ WebSocket error: ' + error);
+            statusDiv.textContent = 'Error';
+            statusDiv.style.color = 'red';
+        };
+
+        ws.onclose = function(event) {
+            log('🔌 WebSocket closed: ' + event.code + ' - ' + event.reason);
+            statusDiv.textContent = 'Closed';
+            statusDiv.style.color = 'orange';
+        };
+    </script>
+</body>
+</html>

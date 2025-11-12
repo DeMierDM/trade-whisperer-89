@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Persistent Claude Terminal</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+</head>
+<body>
+    <h1>Test Persistent Claude Terminal Connection</h1>
+    <div id="status">Connecting...</div>
+    <input type="text" id="messageInput" placeholder="Type a message to Claude..." style="width: 400px;">
+    <button onclick="sendMessage()">Send</button>
+    <div id="output" style="border: 1px solid #ccc; height: 300px; overflow-y: scroll; margin-top: 10px; padding: 10px;"></div>
+
+    <script>
+        const socket = io('ws://localhost:8081');
+        let terminalId = null;
+
+        socket.on('connect', () => {
+            document.getElementById('status').textContent = '✅ Connected - Creating persistent terminal session...';
+            
+            // Request connection to persistent terminal
+            socket.emit('create-terminal', {
+                sessionId: 'claude-persistent-main'
+            });
+        });
+
+        socket.on('terminal-created', (data) => {
+            terminalId = data.terminalId;
+            document.getElementById('status').textContent = `✅ Connected to persistent terminal: ${terminalId}`;
+            addOutput(`Connected to terminal: ${terminalId}`);
+        });
+
+        socket.on('claude-response', (data) => {
+            addOutput(`Claude: ${data.response}`);
+        });
+
+        socket.on('error', (error) => {
+            addOutput(`❌ Error: ${JSON.stringify(error)}`);
+        });
+
+        socket.on('disconnect', () => {
+            document.getElementById('status').textContent = '❌ Disconnected';
+        });
+
+        function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            
+            if (message && terminalId) {
+                addOutput(`You: ${message}`);
+                
+                socket.emit('terminal-input', {
+                    terminalId: terminalId,
+                    input: message
+                });
+                
+                input.value = '';
+            }
+        }
+
+        function addOutput(text) {
+            const output = document.getElementById('output');
+            const div = document.createElement('div');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${text}`;
+            output.appendChild(div);
+            output.scrollTop = output.scrollHeight;
+        }
+
+        // Allow Enter key to send messages
+        document.getElementById('messageInput').addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                sendMessage();
+            }
+        });
+    </script>
+</body>
+</html>

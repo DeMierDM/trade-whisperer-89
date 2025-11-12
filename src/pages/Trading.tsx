@@ -8,6 +8,8 @@ import { useToast } from "@/hooks/use-toast";
 import { getMarketStatus, MarketStatus } from "@/lib/marketHours";
 import { DataFlowDebugPanel } from "@/components/DataFlowDebugPanel";
 import { LiveTradingViewChart, ChartUpdateAPI } from "@/components/LiveTradingViewChart";
+import ProfessionalTradingChart from "@/components/ProfessionalTradingChart";
+import MultiBotDashboard from "@/components/MultiBotDashboard";
 import { useStockBusData } from "@/hooks/useStockBusData";
 import { useOptionsBusData } from "@/hooks/useOptionsBusData";
 import { useLiveChartUpdates } from "@/hooks/useLiveChartUpdates";
@@ -33,6 +35,7 @@ interface OptionData {
 const Trading = () => {
   const { toast } = useToast();
   const [selectedSymbol, setSelectedSymbol] = useState("SPY");
+    const [activeBotSymbols, setActiveBotSymbols] = useState<string[]>(["SPY", "QQQ", "IWM"]); // Context7: Default fallback symbols // Context7: Dynamic bot symbols
   const [timeframe, setTimeframe] = useState("1m");
   const [marketData, setMarketData] = useState<MarketData | null>(null);
   const [optionsData, setOptionsData] = useState<OptionData[]>([]);
@@ -46,6 +49,43 @@ const Trading = () => {
 
   // Chart ref for direct updates (bypasses React)
   const chartApiRef = useRef<ChartUpdateAPI | null>(null);
+
+  // Context7 Pattern: Fetch active bot symbols dynamically
+  const fetchActiveBotSymbols = useCallback(async () => {
+    console.log('🤖 [Context7] Fetching active bot symbols...');
+    try {
+      // Use relative path to leverage Vite proxy or try paper trading service directly
+      let response;
+      try {
+        console.log('🤖 [Context7] Trying /api/bots via proxy...');
+        response = await fetch('/api/bots'); // Try via proxy first
+      } catch (proxyError) {
+        console.log('🤖 [Context7] Proxy failed, trying direct container access...');
+        // Fallback to direct container access
+        response = await fetch('http://trading_paper_bots:3005/api/bots');
+      }
+      
+      if (response.ok) {
+        const bots = await response.json();
+        const uniqueSymbols = [...new Set(bots.map((bot: any) => bot.symbol))];
+        console.log('🤖 [Context7] Fetched bot symbols:', uniqueSymbols);
+        setActiveBotSymbols(uniqueSymbols);
+        
+        // Set first available symbol as selected if current selection not in active bots
+        if (uniqueSymbols.length > 0 && !uniqueSymbols.includes(selectedSymbol)) {
+          console.log(`🤖 [Context7] Switching from ${selectedSymbol} to ${uniqueSymbols[0]}`);
+          setSelectedSymbol(uniqueSymbols[0]);
+        }
+      } else {
+        throw new Error(`HTTP ${response.status}`);
+      }
+    } catch (error) {
+      console.error('🤖 [Context7] Failed to fetch active bot symbols:', error);
+      // Fallback to default symbols from validation results
+      console.log('🤖 [Context7] Using fallback symbols: SPY, QQQ, IWM');
+      setActiveBotSymbols(["SPY", "QQQ", "IWM"]);
+    }
+  }, [selectedSymbol]);
 
   // Memoize symbol arrays to prevent recreation on every render
   const stockSymbols = useMemo(() => [selectedSymbol], [selectedSymbol]);
@@ -91,13 +131,16 @@ const Trading = () => {
   // Optimized live chart updates (direct to TradingView, no React rerenders)
   const { updateWithLiveTrade, reset: resetLiveUpdates } = useLiveChartUpdates(chartApiRef);
 
-  // Update market status every minute
+  // Update market status every minute and fetch active bot symbols
   useEffect(() => {
+    // Fetch active bot symbols on component mount
+    fetchActiveBotSymbols();
+    
     const interval = setInterval(() => {
       setMarketStatus(getMarketStatus());
     }, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchActiveBotSymbols]);
 
   // ============================================================================
   // STEP 1: FETCH HISTORICAL DATA (BUS FIRST, THEN REST API FALLBACK)
@@ -525,7 +568,10 @@ const Trading = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto p-6 space-y-4">
+      <div style={{backgroundColor: 'red', color: 'white', padding: '10px', position: 'fixed', top: 0, left: 0, right: 0, zIndex: 9999}}>
+        🤖 CONTEXT7 DEBUG: Active Bot Symbols = {activeBotSymbols.join(', ')} (Length: {activeBotSymbols.length})
+      </div>
+      <div className="container mx-auto p-6 space-y-4" style={{marginTop: '60px'}}>
         {/* Header with Bot Controls */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-6">
@@ -681,6 +727,7 @@ const Trading = () => {
           <TabsList className="bg-secondary">
             <TabsTrigger value="live">Live Trading</TabsTrigger>
             <TabsTrigger value="paper">Paper Trading</TabsTrigger>
+            <TabsTrigger value="multi-bot">Multi-Bot Manager</TabsTrigger>
           </TabsList>
 
           <TabsContent value="live" className="space-y-4 mt-4">
@@ -705,10 +752,42 @@ const Trading = () => {
               />
             </div>
 
+            {/* Context7 Pattern: Active Bot Symbol Tabs */}
+            <div className="mb-4">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="text-sm font-medium text-muted-foreground">Active Trading Bots:</div>
+                <div className="flex gap-1">
+                  {activeBotSymbols.map((symbol) => (
+                    <button
+                      key={symbol}
+                      onClick={() => setSelectedSymbol(symbol)}
+                      className={`px-3 py-1 text-sm rounded-md border transition-colors ${
+                        selectedSymbol === symbol
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-secondary hover:bg-secondary/80 border-border'
+                      }`}
+                      data-testid={`bot-tab-${symbol}`}
+                    >
+                      {symbol}
+                    </button>
+                  ))}
+                </div>
+                <div className="text-xs text-muted-foreground ml-2">
+                  ({activeBotSymbols.length} active bots)
+                </div>
+              </div>
+            </div>
+
             {/* Main Grid */}
-            <div className="grid grid-cols-12 gap-4 overflow-hidden">
-              {/* Chart Panel - TradingView */}
-              <Card className="col-span-8 p-6 bg-gradient-card border-border shadow-card overflow-hidden">
+            {/* Professional Trading Interface */}
+            <ProfessionalTradingChart
+              symbol={selectedSymbol}
+              onSymbolChange={setSelectedSymbol}
+            />
+
+            <div className="grid grid-cols-12 gap-4 overflow-hidden mt-4">
+              {/* Legacy Chart Panel for comparison (hidden by default) */}
+              <Card className="col-span-8 p-6 bg-gradient-card border-border shadow-card overflow-hidden hidden">
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-4">
                     <h2 className="text-xl font-semibold">{selectedSymbol}</h2>
@@ -859,7 +938,6 @@ const Trading = () => {
                           className={`h-full transition-all ${
                             risk.pct > 80 ? "bg-danger" : risk.pct > 50 ? "bg-warning" : "bg-success"
                           }`}
-                          style={{ width: `${risk.pct}%` }}
                         />
                       </div>
                     </div>
@@ -878,6 +956,10 @@ const Trading = () => {
             <div className="flex items-center justify-center h-[600px]">
               <p className="text-muted-foreground">Paper trading interface (identical to live)</p>
             </div>
+          </TabsContent>
+
+          <TabsContent value="multi-bot" className="space-y-4 mt-4">
+            <MultiBotDashboard />
           </TabsContent>
         </Tabs>
       </div>

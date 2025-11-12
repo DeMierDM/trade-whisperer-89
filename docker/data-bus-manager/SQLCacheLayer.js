@@ -70,6 +70,36 @@ class SQLCacheLayer {
         ON bus_option_data (symbol, timestamp DESC)
       `);
 
+      // Options Greeks table - stores real-time Greeks from Alpaca
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS bus_option_greeks (
+          symbol VARCHAR(50) NOT NULL,
+          timestamp TIMESTAMPTZ NOT NULL,
+          delta DECIMAL(10,6),
+          gamma DECIMAL(10,6),
+          theta DECIMAL(10,6),
+          vega DECIMAL(10,6),
+          rho DECIMAL(10,6),
+          implied_volatility DECIMAL(10,6),
+          last_price DECIMAL(12,4),
+          bid DECIMAL(12,4),
+          ask DECIMAL(12,4),
+          data_source VARCHAR(50) DEFAULT 'alpaca_snapshots',
+          metadata JSONB,
+          PRIMARY KEY (symbol, timestamp)
+        )
+      `);
+
+      await this.pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_bus_greeks_symbol_time
+        ON bus_option_greeks (symbol, timestamp DESC)
+      `);
+
+      await this.pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_bus_greeks_delta
+        ON bus_option_greeks (delta) WHERE delta IS NOT NULL
+      `);
+
       // Request deduplication log
       await this.pool.query(`
         CREATE TABLE IF NOT EXISTS bus_request_log (
@@ -84,6 +114,28 @@ class SQLCacheLayer {
       await this.pool.query(`
         CREATE INDEX IF NOT EXISTS idx_bus_requests_ttl
         ON bus_request_log (ttl_expires_at)
+      `);
+
+      // Aggregated bars table for minute bars built from trade data
+      await this.pool.query(`
+        CREATE TABLE IF NOT EXISTS bus_stock_bars (
+          symbol VARCHAR(10) NOT NULL,
+          timeframe VARCHAR(10) NOT NULL,
+          bar_timestamp TIMESTAMPTZ NOT NULL,
+          open DECIMAL(12,4) NOT NULL,
+          high DECIMAL(12,4) NOT NULL,
+          low DECIMAL(12,4) NOT NULL,
+          close DECIMAL(12,4) NOT NULL,
+          volume BIGINT NOT NULL,
+          trade_count INTEGER DEFAULT 0,
+          vwap DECIMAL(12,4),
+          PRIMARY KEY (symbol, timeframe, bar_timestamp)
+        )
+      `);
+
+      await this.pool.query(`
+        CREATE INDEX IF NOT EXISTS idx_bus_bars_symbol_timeframe_time
+        ON bus_stock_bars (symbol, timeframe, bar_timestamp DESC)
       `);
 
       console.log('✅ SQLCacheLayer tables initialized');
@@ -156,6 +208,131 @@ class SQLCacheLayer {
   }
 
   /**
+   * Handle options quote data with all Alpaca fields
+   */
+  handleOptionsQuoteUpdate(channel, data) {
+    if (!data || !data.symbol) {
+      console.warn('⚠️ Skipping options quote without symbol:', channel);
+      return;
+    }
+
+    this.writeBuffer.push({
+      table: 'bus_option_quotes',
+      data: {
+        symbol: data.symbol,
+        timestamp: data.timestamp || new Date().toISOString(),
+        bid_price: data.bid_price,
+        ask_price: data.ask_price,
+        bid_size: data.bid_size,
+        ask_size: data.ask_size,
+        bid_exchange: data.bid_exchange,
+        ask_exchange: data.ask_exchange,
+        condition: data.condition,
+        data_source: data.data_source || 'alpaca_indicative',
+        metadata: JSON.stringify(data)
+      }
+    });
+
+    if (this.writeBuffer.length >= this.batchSize) {
+      this.flushBuffer();
+    }
+  }
+
+  /**
+   * Handle options trade data with all Alpaca fields
+   */
+  handleOptionsTradeUpdate(channel, data) {
+    if (!data || !data.symbol) {
+      console.warn('⚠️ Skipping options trade without symbol:', channel);
+      return;
+    }
+
+    this.writeBuffer.push({
+      table: 'bus_option_trades',
+      data: {
+        symbol: data.symbol,
+        timestamp: data.timestamp || new Date().toISOString(),
+        price: data.price,
+        size: data.size,
+        exchange: data.exchange,
+        condition: data.condition,
+        data_source: data.data_source || 'alpaca_indicative',
+        metadata: JSON.stringify(data)
+      }
+    });
+
+    if (this.writeBuffer.length >= this.batchSize) {
+      this.flushBuffer();
+    }
+  }
+
+  /**
+   * Handle options snapshot data with Greeks and IV
+   * Snapshots contain latest trade, quote, Greeks, and implied volatility
+   */
+  handleSnapshotUpdate(channel, data) {
+    // Skip if no data or no symbol
+    if (!data || !data.symbol) {
+      console.warn('⚠️ Skipping snapshot data without symbol:', channel);
+      return;
+    }
+
+    // Check if Greeks data is available
+    if (!data.greeks && !data.impliedVolatility) {
+      // No Greeks data in this snapshot, skip
+      return;
+    }
+
+    const symbol = data.symbol;
+    const timestamp = data.timestamp || new Date().toISOString();
+
+    // Extract price data
+    let lastPrice = null;
+    let bid = null;
+    let ask = null;
+
+    if (data.latestTrade) {
+      lastPrice = data.latestTrade.price;
+    }
+
+    if (data.latestQuote) {
+      bid = data.latestQuote.bid;
+      ask = data.latestQuote.ask;
+    }
+
+    // Extract Greeks
+    const greeks = data.greeks || {};
+
+    this.writeBuffer.push({
+      table: 'bus_option_greeks',
+      data: {
+        symbol: symbol,
+        timestamp: timestamp,
+        delta: greeks.delta || null,
+        gamma: greeks.gamma || null,
+        theta: greeks.theta || null,
+        vega: greeks.vega || null,
+        rho: greeks.rho || null,
+        implied_volatility: data.impliedVolatility || null,
+        last_price: lastPrice,
+        bid: bid,
+        ask: ask,
+        data_source: data.data_source || 'alpaca_snapshots',
+        metadata: JSON.stringify(data)
+      }
+    });
+
+    if (this.writeBuffer.length >= this.batchSize) {
+      this.flushBuffer();
+    }
+
+    // Throttled logging (5% of snapshots)
+    if (Math.random() < 0.05) {
+      console.log(`📊 Greeks saved: ${symbol} Delta=${greeks.delta?.toFixed(3)}, IV=${data.impliedVolatility?.toFixed(3)}`);
+    }
+  }
+
+  /**
    * Flush write buffer to database
    */
   async flushBuffer() {
@@ -200,6 +377,80 @@ class SQLCacheLayer {
             item.data.ask,
             item.data.bid_size,
             item.data.ask_size,
+            item.data.data_source,
+            item.data.metadata
+          ]);
+        } else if (item.table === 'bus_option_quotes') {
+          await client.query(`
+            INSERT INTO bus_option_quotes (
+              symbol, timestamp, bid_price, ask_price, bid_size, ask_size,
+              bid_exchange, ask_exchange, condition, data_source, metadata
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            ON CONFLICT (symbol, timestamp) DO UPDATE
+            SET bid_price = EXCLUDED.bid_price, ask_price = EXCLUDED.ask_price,
+                bid_size = EXCLUDED.bid_size, ask_size = EXCLUDED.ask_size,
+                bid_exchange = EXCLUDED.bid_exchange, ask_exchange = EXCLUDED.ask_exchange,
+                condition = EXCLUDED.condition, data_source = EXCLUDED.data_source,
+                metadata = EXCLUDED.metadata
+          `, [
+            item.data.symbol,
+            item.data.timestamp,
+            item.data.bid_price,
+            item.data.ask_price,
+            item.data.bid_size,
+            item.data.ask_size,
+            item.data.bid_exchange,
+            item.data.ask_exchange,
+            item.data.condition,
+            item.data.data_source,
+            item.data.metadata
+          ]);
+        } else if (item.table === 'bus_option_trades') {
+          await client.query(`
+            INSERT INTO bus_option_trades (
+              symbol, timestamp, price, size, exchange, condition, data_source, metadata
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (symbol, timestamp) DO UPDATE
+            SET price = EXCLUDED.price, size = EXCLUDED.size,
+                exchange = EXCLUDED.exchange, condition = EXCLUDED.condition,
+                data_source = EXCLUDED.data_source, metadata = EXCLUDED.metadata
+          `, [
+            item.data.symbol,
+            item.data.timestamp,
+            item.data.price,
+            item.data.size,
+            item.data.exchange,
+            item.data.condition,
+            item.data.data_source,
+            item.data.metadata
+          ]);
+        } else if (item.table === 'bus_option_greeks') {
+          await client.query(`
+            INSERT INTO bus_option_greeks (
+              symbol, timestamp, delta, gamma, theta, vega, rho,
+              implied_volatility, last_price, bid, ask, data_source, metadata
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            ON CONFLICT (symbol, timestamp) DO UPDATE
+            SET delta = EXCLUDED.delta, gamma = EXCLUDED.gamma,
+                theta = EXCLUDED.theta, vega = EXCLUDED.vega, rho = EXCLUDED.rho,
+                implied_volatility = EXCLUDED.implied_volatility,
+                last_price = EXCLUDED.last_price, bid = EXCLUDED.bid, ask = EXCLUDED.ask,
+                data_source = EXCLUDED.data_source, metadata = EXCLUDED.metadata
+          `, [
+            item.data.symbol,
+            item.data.timestamp,
+            item.data.delta,
+            item.data.gamma,
+            item.data.theta,
+            item.data.vega,
+            item.data.rho,
+            item.data.implied_volatility,
+            item.data.last_price,
+            item.data.bid,
+            item.data.ask,
             item.data.data_source,
             item.data.metadata
           ]);

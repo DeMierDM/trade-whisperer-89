@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { TrendingUp, TrendingDown, DollarSign, Target, BarChart3, Activity } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
+import { BacktestInteractiveChart } from './BacktestInteractiveChart';
 
 interface BacktestMetrics {
   id: number;
@@ -21,6 +22,7 @@ interface BacktestMetrics {
   win_rate: number;
   profit_factor: number;
   total_trades: number;
+  contract_count?: number; // This is the actual count from database
   winning_trades: number;
   losing_trades: number;
   avg_win: number;
@@ -197,12 +199,17 @@ export function BacktestResults({ metrics, trades, loading }: BacktestResultsPro
 
       {/* Detailed Metrics */}
       <Card className="p-6">
-        <Tabs defaultValue="performance">
+        <Tabs defaultValue="chart">
           <TabsList>
+            <TabsTrigger value="chart">Interactive Chart</TabsTrigger>
             <TabsTrigger value="performance">Performance</TabsTrigger>
-            <TabsTrigger value="trades">Trades ({metrics.total_trades})</TabsTrigger>
+            <TabsTrigger value="trades">Trades ({metrics.contract_count || metrics.total_trades})</TabsTrigger>
             <TabsTrigger value="hourly">Hourly Analysis</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="chart">
+            <BacktestInteractiveChart backtestId={metrics.id} />
+          </TabsContent>
 
           <TabsContent value="performance" className="space-y-4">
             <div className="grid grid-cols-2 gap-6">

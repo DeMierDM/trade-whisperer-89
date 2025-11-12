@@ -1229,6 +1229,37 @@ app.post('/api/backtest/run', async (req, res) => {
         console.log(`   Total Return: ${((result.performance?.totalReturn || 0) * 100).toFixed(2)}%`);
         console.log(`   Win Rate: ${((result.performance?.winRate || 0) * 100).toFixed(1)}%`);
         
+        // 🔧 FIX: Update backtest metrics in database
+        const perf = result.performance || {};
+        await pool.query(`
+          UPDATE backtests 
+          SET status = 'completed',
+              completed_at = NOW(),
+              final_capital = $1,
+              total_return = $2,
+              total_trades = $3,
+              winning_trades = $4,
+              losing_trades = $5,
+              win_rate = $6,
+              sharpe_ratio = $7,
+              max_drawdown = $8,
+              profit_factor = $9
+          WHERE id = $10
+        `, [
+          perf.finalCapital || initialCapital,
+          perf.totalReturn || 0,
+          perf.totalTrades || 0,
+          perf.winningTrades || 0,
+          perf.losingTrades || 0,
+          perf.winRate || 0,
+          perf.sharpeRatio || 0,
+          perf.maxDrawdown || 0,
+          perf.profitFactor || 0,
+          backtestId
+        ]);
+        
+        console.log(`📊 [BACKTEST ${backtestId}] Metrics saved to database`);
+        
       } catch (error) {
         console.error(`❌ [BACKTEST ${backtestId}] Error in background execution:`, error);
         console.error(error.stack);
@@ -1364,6 +1395,181 @@ app.get('/api/backtest/:id/signals', async (req, res) => {
 
   } catch (error) {
     console.error('❌ [BACKTEST] Error fetching signals:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get underlying stock chart data for a backtest
+ * GET /api/backtest/:id/chart-data
+ */
+app.get('/api/backtest/:id/chart-data', async (req, res) => {
+  try {
+    const backtestId = req.params.id;
+
+    // First get the backtest info to know the symbol and date range
+    const backtestResult = await pool.query(`
+      SELECT symbol, start_date, end_date, strategy_name
+      FROM backtests 
+      WHERE id = $1
+    `, [backtestId]);
+
+    if (backtestResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Backtest not found' });
+    }
+
+    const { symbol, start_date, end_date, strategy_name } = backtestResult.rows[0];
+
+    // Get underlying bars from database
+    const barsResult = await pool.query(`
+      SELECT 
+        timestamp,
+        open,
+        high, 
+        low,
+        close,
+        volume
+      FROM underlying_bars
+      WHERE symbol = $1 
+        AND timestamp >= $2 
+        AND timestamp <= $3
+      ORDER BY timestamp
+    `, [symbol, start_date, end_date]);
+
+    // Get signals for this backtest (may not exist for all backtests)
+    const signalsResult = await pool.query(`
+      SELECT 
+        id,
+        timestamp, 
+        signal_type, 
+        underlying_price,
+        target_delta,
+        executed,
+        contract_id
+      FROM strategy_signals
+      WHERE backtest_id = $1
+      ORDER BY timestamp
+    `, [backtestId]);
+
+    // If no signals exist, create signals from trades directly
+    let tradesResult;
+    if (signalsResult.rows.length === 0) {
+      // No strategy_signals table data, get trades directly from option_contracts
+      tradesResult = await pool.query(`
+        SELECT 
+          id,
+          contract_symbol,
+          option_type,
+          entry_timestamp,
+          entry_price,
+          exit_timestamp,
+          exit_price,
+          net_pnl,
+          return_pct,
+          quantity,
+          status,
+          close_reason,
+          entry_underlying_price as underlying_price
+        FROM option_contracts
+        WHERE backtest_id = $1
+        ORDER BY entry_timestamp
+      `, [backtestId]);
+    } else {
+      // Get trade details for executed signals (original approach)
+      tradesResult = await pool.query(`
+        SELECT 
+          t.*,
+          s.timestamp as signal_timestamp,
+          s.signal_type,
+          s.underlying_price as signal_underlying_price
+        FROM option_contracts t
+        INNER JOIN strategy_signals s ON s.contract_id = t.id
+        WHERE s.backtest_id = $1 AND s.executed = true
+        ORDER BY t.entry_timestamp
+      `, [backtestId]);
+    }
+
+    // Transform data for TradingView Lightweight Charts format
+    const chartData = barsResult.rows.map(bar => ({
+      time: new Date(bar.timestamp).getTime() / 1000, // Convert to seconds for LightweightCharts
+      open: parseFloat(bar.open),
+      high: parseFloat(bar.high),
+      low: parseFloat(bar.low),
+      close: parseFloat(bar.close),
+      volume: parseInt(bar.volume)
+    }));
+
+    // Transform signals with trade details
+    let signals;
+    if (signalsResult.rows.length > 0) {
+      // Use existing strategy_signals approach
+      signals = signalsResult.rows.map(signal => {
+        const matchingTrade = tradesResult.rows.find(trade => 
+          trade.signal_timestamp === signal.timestamp
+        );
+
+        return {
+          id: signal.id,
+          time: new Date(signal.timestamp).getTime() / 1000,
+          signal_type: signal.signal_type,
+          underlying_price: parseFloat(signal.underlying_price),
+          target_delta: parseFloat(signal.target_delta || 0),
+          executed: signal.executed,
+          trade: matchingTrade ? {
+            id: matchingTrade.id,
+            contract_symbol: matchingTrade.contract_symbol,
+            entry_timestamp: matchingTrade.entry_timestamp,
+            entry_price: parseFloat(matchingTrade.entry_price),
+            exit_timestamp: matchingTrade.exit_timestamp,
+            exit_price: parseFloat(matchingTrade.exit_price),
+            net_pnl: parseFloat(matchingTrade.net_pnl),
+            return_pct: parseFloat(matchingTrade.return_pct),
+            quantity: parseInt(matchingTrade.quantity),
+            status: matchingTrade.status,
+            close_reason: matchingTrade.close_reason
+          } : null
+        };
+      });
+    } else {
+      // Create signals from trades directly (for newer backtests without strategy_signals)
+      signals = tradesResult.rows.map(trade => ({
+        id: trade.id,
+        time: new Date(trade.entry_timestamp).getTime() / 1000,
+        signal_type: trade.option_type === 'CALL' ? 'BUY_CALL' : 'BUY_PUT',
+        underlying_price: parseFloat(trade.entry_underlying_price || 0),
+        target_delta: 0.5, // Default delta for display
+        executed: true, // All trades in option_contracts are executed
+        trade: {
+          id: trade.id,
+          contract_symbol: trade.contract_symbol,
+          entry_timestamp: trade.entry_timestamp,
+          entry_price: parseFloat(trade.entry_price),
+          exit_timestamp: trade.exit_timestamp,
+          exit_price: parseFloat(trade.exit_price || trade.entry_price),
+          net_pnl: parseFloat(trade.net_pnl || 0),
+          return_pct: parseFloat(trade.return_pct || 0),
+          quantity: parseInt(trade.quantity),
+          status: trade.status || 'CLOSED',
+          close_reason: trade.close_reason || 'Manual'
+        }
+      }));
+    }
+
+    res.json({
+      backtestId: parseInt(backtestId),
+      symbol,
+      startDate: start_date,
+      endDate: end_date,
+      strategyName: strategy_name,
+      chartData,
+      signals,
+      totalBars: chartData.length,
+      totalSignals: signals.length,
+      executedSignals: signals.filter(s => s.executed).length
+    });
+
+  } catch (error) {
+    console.error('❌ [BACKTEST] Error fetching chart data:', error);
     res.status(500).json({ error: error.message });
   }
 });

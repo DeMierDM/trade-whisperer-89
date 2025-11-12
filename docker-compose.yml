@@ -1,5 +1,5 @@
 services:
-  # Local PostgreSQL Database (100% Free)
+  # Local PostgreSQL Database (100% Free) - PORSCHE TUNED 🏎️
   database:
     image: postgres:15-alpine
     container_name: trading_db
@@ -8,14 +8,29 @@ services:
       POSTGRES_USER: trader
       POSTGRES_PASSWORD: trading123
       POSTGRES_HOST_AUTH_METHOD: trust
+      # 🏎️ PERFORMANCE TUNING
+      POSTGRES_SHARED_BUFFERS: 1GB        # Buffer cache
+      POSTGRES_EFFECTIVE_CACHE_SIZE: 4GB  # Available memory for caching
+      POSTGRES_WORK_MEM: 32MB             # Sort/hash operations
+      POSTGRES_CHECKPOINT_SEGMENTS: 64     # Write performance
     ports:
       - "5433:5432"  # Use port 5433 to avoid conflicts
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./docker/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./docker/init-paper-trading.sql:/docker-entrypoint-initdb.d/02-init-paper-trading.sql
     restart: unless-stopped
     networks:
       - trading-network
+    # 🏎️ PORSCHE DATABASE RESOURCES
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0' 
+          memory: 2G
 
   # Frontend Development Server with Hot Reload
   frontend:
@@ -26,6 +41,7 @@ services:
     environment:
       - VITE_API_BASE_URL=http://localhost:3001
       - VITE_BACKTESTING_API_URL=http://localhost:3002
+      - VITE_PAPER_TRADING_API_URL=http://localhost:3005
     ports:
       - "8080:8080"
     volumes:
@@ -68,7 +84,7 @@ services:
     networks:
       - trading-network
 
-  # Backtesting Server with Hot Reload
+  # Backtesting Server with Hot Reload - PORSCHE MODE 🏎️
   backtesting_server:
     build:
       context: ./docker/backtesting-server
@@ -80,6 +96,9 @@ services:
       PORT: 3002
       NODE_ENV: development
       DATABASE_URL: postgresql://trader:trading123@database:5432/trading_system
+      # Performance optimizations
+      UV_THREADPOOL_SIZE: 16           # Increase thread pool for I/O
+      NODE_MAX_OLD_SPACE_SIZE: 4096    # 4GB RAM for Node.js
     ports:
       - "3002:3002"
     depends_on:
@@ -93,6 +112,15 @@ services:
     restart: unless-stopped
     networks:
       - trading-network
+    # 🏎️ PORSCHE RESOURCE ALLOCATION
+    deploy:
+      resources:
+        limits:
+          cpus: '4.0'      # Use 4 CPU cores 
+          memory: 6G       # 6GB RAM limit
+        reservations:
+          cpus: '2.0'      # Reserve 2 cores minimum
+          memory: 2G       # Reserve 2GB RAM minimum
 
   # Redis for WebSocket Session Management
   redis:
@@ -154,8 +182,70 @@ services:
     networks:
       - trading-network
 
+  # Paper Trading Service - Live automated trading bots
+  paper_trading_service:
+    build:
+      context: ./docker/paper-trading-service
+      dockerfile: Dockerfile.dev
+    container_name: trading_paper_bots
+    env_file:
+      - .env.docker
+    environment:
+      PORT: 3005
+      NODE_ENV: development
+      DATABASE_URL: postgresql://trader:trading123@database:5432/trading_system
+      DATA_BUS_URL: ws://data_bus_manager:3004
+    ports:
+      - "3005:3005"
+    depends_on:
+      - database
+      - data_bus_manager
+    volumes:
+      - ./docker/paper-trading-service:/app
+      - /app/node_modules
+      - ./docker/backtesting-server/strategies:/app/strategies
+    command: npm run dev
+    restart: unless-stopped
+    networks:
+      - trading-network
+
+  # Claude AI Terminal - Integrated AI assistant with full codebase access
+  claude_ai:
+    build:
+      context: ./docker/claude-ai
+      dockerfile: Dockerfile
+    container_name: trading_claude_ai
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - TERM=xterm-256color
+      - SHELL=/bin/zsh
+    ports:
+      - "8081:8080"  # WebSocket terminal bridge
+    volumes:
+      # Mount entire codebase for Claude access
+      - .:/workspace:rw
+      # Mount your local Claude configuration for authentication
+      - ~/.claude:/root/.claude:rw
+      # Preserve npm cache and shell history
+      - claude_npm_cache:/root/.npm
+      - claude_zsh_history:/root/.zsh_history
+    working_dir: /workspace
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    networks:
+      - trading-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
 volumes:
   postgres_data:
+  claude_npm_cache:
+  claude_zsh_history:
 
 networks:
   trading-network:

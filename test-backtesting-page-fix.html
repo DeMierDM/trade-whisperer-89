@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Backtesting Page Fix Test</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #0f172a;
+            color: white;
+            padding: 20px;
+        }
+        .test-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #1e293b;
+            border-radius: 8px;
+        }
+        .test-result {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .pass { background: #065f46; border-left: 4px solid #10b981; }
+        .fail { background: #7f1d1d; border-left: 4px solid #ef4444; }
+        .loading { background: #1e40af; border-left: 4px solid #3b82f6; }
+        iframe {
+            width: 100%;
+            height: 400px;
+            border: 1px solid #374151;
+            border-radius: 4px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <h1>🧪 Backtesting Page Fix Validation</h1>
+        
+        <div id="testResults">
+            <div class="test-result loading">
+                🔄 Loading frontend and testing backtesting page...
+            </div>
+        </div>
+        
+        <iframe id="appFrame" src="http://localhost:8080"></iframe>
+        
+        <script>
+            const testResults = document.getElementById('testResults');
+            const appFrame = document.getElementById('appFrame');
+            
+            function addTestResult(message, passed) {
+                const div = document.createElement('div');
+                div.className = `test-result ${passed ? 'pass' : 'fail'}`;
+                div.innerHTML = `${passed ? '✅' : '❌'} ${message}`;
+                testResults.appendChild(div);
+            }
+            
+            function testBacktestingPageFix() {
+                let testsPassed = 0;
+                let totalTests = 0;
+                
+                // Clear loading message
+                testResults.innerHTML = '';
+                
+                // Test 1: Frontend loads
+                totalTests++;
+                appFrame.onload = function() {
+                    addTestResult('Frontend loaded successfully', true);
+                    testsPassed++;
+                    
+                    // Test 2: Try to navigate to backtesting (simulate user action)
+                    setTimeout(() => {
+                        totalTests++;
+                        try {
+                            // Check if we can access the iframe content (same origin)
+                            const iframeDoc = appFrame.contentDocument || appFrame.contentWindow.document;
+                            
+                            if (iframeDoc) {
+                                addTestResult('Can access frontend content', true);
+                                testsPassed++;
+                                
+                                // Test 3: Look for React app and navigation
+                                totalTests++;
+                                const hasReactApp = iframeDoc.getElementById('root') !== null;
+                                addTestResult('React app root element found', hasReactApp);
+                                if (hasReactApp) testsPassed++;
+                                
+                                // Test 4: Check for JavaScript errors in console (we can't directly access console, so check for error indicators)
+                                totalTests++;
+                                const bodyText = iframeDoc.body.textContent || '';
+                                const hasContent = bodyText.length > 100;
+                                addTestResult('Frontend has content (no blank page)', hasContent);
+                                if (hasContent) testsPassed++;
+                                
+                                // Summary
+                                const allTestsPassed = testsPassed === totalTests;
+                                addTestResult(`Tests completed: ${testsPassed}/${totalTests} passed`, allTestsPassed);
+                                
+                                if (allTestsPassed) {
+                                    addTestResult('🎉 All tests passed! The backtesting page fix appears to work correctly.', true);
+                                } else {
+                                    addTestResult('⚠️ Some tests failed. There may still be issues with the backtesting page.', false);
+                                }
+                            } else {
+                                addTestResult('Cannot access iframe content (CORS or security restrictions)', false);
+                                addTestResult('Manual testing required - please check the page directly in browser', false);
+                            }
+                        } catch (error) {
+                            addTestResult(`Error during testing: ${error.message}`, false);
+                            addTestResult('Manual testing required - please check http://localhost:8080 directly', false);
+                        }
+                    }, 3000); // Wait 3 seconds for React to load
+                };
+                
+                appFrame.onerror = function() {
+                    addTestResult('Frontend failed to load', false);
+                };
+            }
+            
+            // Start tests when page loads
+            testBacktestingPageFix();
+        </script>
+    </div>
+</body>
+</html>

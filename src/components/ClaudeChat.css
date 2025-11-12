@@ -1,0 +1,22 @@
+/* Custom animations for ClaudeChat typing indicator */
+.animate-bounce-delay-1 {
+  animation: bounce 1s infinite;
+  animation-delay: 0.1s;
+}
+
+.animate-bounce-delay-2 {
+  animation: bounce 1s infinite;
+  animation-delay: 0.2s;
+}
+
+@keyframes bounce {
+  0%, 20%, 50%, 80%, 100% {
+    transform: translateY(0);
+  }
+  40% {
+    transform: translateY(-6px);
+  }
+  60% {
+    transform: translateY(-3px);
+  }
+}

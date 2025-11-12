@@ -246,8 +246,12 @@ class BacktestEngine {
         const currentTime = bar.t;
         const currentPrice = parseFloat(bar.c);
 
-        // Check for ALL signals at this timestamp (not just the first one)
-        const activeSignals = strategySignals.filter(s => s.timestamp === currentTime);
+        // Check for ALL signals at this timestamp (normalize to milliseconds for comparison)
+        const currentTimeMs = new Date(currentTime).getTime();
+        const activeSignals = strategySignals.filter(s => {
+          const signalTimeMs = new Date(s.timestamp).getTime();
+          return signalTimeMs === currentTimeMs;
+        });
 
         // Update existing positions
         const updateResult = await this.updateOpenPositions(bar, strategy, activeBacktestId, mode);
@@ -1030,6 +1034,7 @@ class BacktestEngine {
     }
 
     return {
+      finalCapital,
       totalReturn,
       winRate,
       profitFactor,

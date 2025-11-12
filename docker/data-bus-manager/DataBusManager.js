@@ -61,7 +61,17 @@ class DataBusManager extends EventEmitter {
     });
 
     this.on('options.*', (channel, data) => {
-      this.sqlCache.handleOptionsUpdate(channel, data);
+      // Route to appropriate handler based on data type
+      if (channel.includes('snapshot')) {
+        this.sqlCache.handleSnapshotUpdate(channel, data);
+      } else if (channel.includes('quote')) {
+        this.sqlCache.handleOptionsQuoteUpdate(channel, data);
+      } else if (channel.includes('trade')) {
+        this.sqlCache.handleOptionsTradeUpdate(channel, data);
+      } else {
+        // Legacy handler for backward compatibility
+        this.sqlCache.handleOptionsUpdate(channel, data);
+      }
     });
 
     console.log('✅ DataBusManager initialized');
@@ -76,6 +86,10 @@ class DataBusManager extends EventEmitter {
     try {
       // Initialize stock data channel
       await this.stockChannel.initialize();
+
+      // Initialize options data channel with WebSocket
+      console.log('🚀 Initializing options WebSocket...');
+      await this.optionsChannel.initializeWebSocket();
 
       console.log('✅ DataBusManager fully initialized');
     } catch (error) {
@@ -158,6 +172,27 @@ class DataBusManager extends EventEmitter {
    */
   async getHistoricalOptionsData(symbol, startDate, endDate) {
     return this.sqlCache.getHistoricalOptions(symbol, startDate, endDate);
+  }
+
+  /**
+   * Get option snapshots with Greeks (delegates to OptionsDataChannel)
+   */
+  async getOptionSnapshots(symbols) {
+    return this.optionsChannel.getOptionSnapshots(symbols);
+  }
+
+  /**
+   * Start polling Greeks for active contracts
+   */
+  startGreeksPolling(symbols, intervalMs = 60000) {
+    return this.optionsChannel.startGreeksPolling(symbols, intervalMs);
+  }
+
+  /**
+   * Stop Greeks polling
+   */
+  stopGreeksPolling() {
+    return this.optionsChannel.stopGreeksPolling();
   }
 
   /**
