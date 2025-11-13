@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  # Development container optimized for Codespaces
+  codespace-dev:
+    image: mcr.microsoft.com/devcontainers/typescript-node:18-bullseye
+    volumes:
+      - ../..:/workspace:cached
+    working_dir: /workspace
+    command: sleep infinity
+    user: vscode
+    environment:
+      - NODE_ENV=development
+      - CODESPACE_MODE=true
+      - SHELL=/bin/bash
+    # Use host networking for simplicity in Codespaces
+    network_mode: "host"
+    
+    # Install additional tools
+    build:
+      context: .
+      dockerfile: Dockerfile.devcontainer
+      
+  # Lightweight services for Codespaces
+  postgres-dev:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: trading_system
+      POSTGRES_USER: trader
+      POSTGRES_PASSWORD: trader_pass_2024
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_codespace_data:/var/lib/postgresql/data
+      - ../docker/database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+
+  redis-dev:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_codespace_data:/data
+    restart: unless-stopped
+
+volumes:
+  postgres_codespace_data:
+  redis_codespace_data:

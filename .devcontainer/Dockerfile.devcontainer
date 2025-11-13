@@ -1,0 +1,43 @@
+FROM mcr.microsoft.com/devcontainers/typescript-node:18-bullseye
+
+# Install additional development tools
+RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
+    && apt-get -y install --no-install-recommends \
+        postgresql-client \
+        redis-tools \
+        curl \
+        wget \
+        vim \
+        nano \
+        htop \
+        tree \
+        jq \
+        unzip \
+    && apt-get autoremove -y && apt-get clean -y
+
+# Install Docker CLI (Docker-in-Docker handled by devcontainer features)
+RUN curl -fsSL https://get.docker.com -o get-docker.sh \
+    && sh get-docker.sh \
+    && rm get-docker.sh
+
+# Install Docker Compose
+RUN curl -L "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
+    && chmod +x /usr/local/bin/docker-compose
+
+# Install global npm packages for trading development
+RUN npm install -g \
+    @playwright/test \
+    typescript \
+    ts-node \
+    nodemon \
+    pm2
+
+# Set up workspace permissions
+RUN mkdir -p /workspace && chown -R vscode:vscode /workspace
+
+USER vscode
+
+# Install user-level tools
+RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.5/install.sh | bash
+
+WORKDIR /workspace
