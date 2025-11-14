@@ -1,131 +1,92 @@
 {
-  "name": "Trade Whisperer - 0DTE Options Trading System",
-  "dockerComposeFile": "./docker-compose.devcontainer.yml",
-  "service": "devcontainer",
-  "workspaceFolder": "/workspace",
-  "shutdownAction": "stopCompose",
+  "name": "Trade Whisperer - Full Stack Trading Platform",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20",
   
   "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {},
-    "ghcr.io/devcontainers/features/node:1": {
-      "version": "18"
-    },
     "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/python:1": {
+      "version": "3.11"
+    },
     "ghcr.io/devcontainers/features/common-utils:2": {
       "installZsh": true,
-      "installOhMyZsh": true,
-      "upgradePackages": true
+      "installOhMyZsh": true
     }
   },
-
-  "customizations": {
-    "vscode": {
-      "extensions": [
-        "ms-vscode.vscode-typescript-next",
-        "bradlc.vscode-tailwindcss",
-        "esbenp.prettier-vscode",
-        "dbaeumer.vscode-eslint",
-        "ms-vscode.vscode-json",
-        "redhat.vscode-yaml",
-        "ms-python.python",
-        "ms-python.black-formatter",
-        "ms-toolsai.jupyter",
-        "GitHub.copilot",
-        "GitHub.copilot-chat",
-        "ms-vscode.docker",
-        "ms-azuretools.vscode-docker",
-        "PKief.material-icon-theme",
-        "formulahendry.auto-rename-tag",
-        "christian-kohler.path-intellisense",
-        "streetsidesoftware.code-spell-checker",
-        "ms-vscode.live-server",
-        "ritwickdey.LiveServer",
-        "ms-vscode-remote.remote-containers"
-      ],
-      "settings": {
-        "terminal.integrated.shell.linux": "/bin/zsh",
-        "terminal.integrated.defaultProfile.linux": "zsh",
-        "editor.formatOnSave": true,
-        "editor.defaultFormatter": "esbenp.prettier-vscode",
-        "editor.codeActionsOnSave": {
-          "source.fixAll.eslint": "explicit"
-        },
-        "typescript.updateImportsOnFileMove.enabled": "always",
-        "javascript.updateImportsOnFileMove.enabled": "always",
-        "files.autoSave": "onFocusChange",
-        "git.autofetch": true,
-        "git.confirmSync": false,
-        "docker.attachShellCommand.linuxContainer": "/bin/zsh",
-        "python.defaultInterpreterPath": "/usr/local/bin/python",
-        "python.linting.enabled": true,
-        "python.linting.pylintEnabled": true,
-        "python.formatting.provider": "black",
-        "workbench.colorTheme": "Default Dark+"
-      }
-    }
-  },
-
-  "forwardPorts": [
-    3000,
-    3001, 
-    3005,
-    5432,
-    6379,
-    8080,
-    5173
+  
+  "runArgs": [
+    "--network=host"
   ],
-
+  
+  "postCreateCommand": "npm install && echo '✅ Node dependencies installed'",
+  
+  "postStartCommand": "docker-compose -f docker-compose.codespace.yml up -d && echo '✅ Backend services started'",
+  
+  "forwardPorts": [
+    8080,
+    3001,
+    3002,
+    3003,
+    3004,
+    3005,
+    5432
+  ],
+  
   "portsAttributes": {
-    "3000": {
+    "8080": {
       "label": "Frontend (Vite)",
       "onAutoForward": "notify"
     },
     "3001": {
-      "label": "Data Service",
+      "label": "API Server",
+      "onAutoForward": "silent"
+    },
+    "3002": {
+      "label": "Backtesting Server",
+      "onAutoForward": "silent"
+    },
+    "3003": {
+      "label": "Options Data Service",
+      "onAutoForward": "silent"
+    },
+    "3004": {
+      "label": "Data Bus Manager",
       "onAutoForward": "silent"
     },
     "3005": {
-      "label": "Backtesting Server",
+      "label": "Paper Trading Service",
       "onAutoForward": "silent"
     },
     "5432": {
       "label": "PostgreSQL",
-      "onAutoForward": "ignore"
-    },
-    "6379": {
-      "label": "Redis",
-      "onAutoForward": "ignore"
-    },
-    "8080": {
-      "label": "Frontend (Production)",
-      "onAutoForward": "openBrowser"
-    },
-    "5173": {
-      "label": "Vite Dev Server",
-      "onAutoForward": "openBrowser"
+      "onAutoForward": "silent"
     }
   },
-
-  "postCreateCommand": "/workspace/.devcontainer/setup-codespace.sh",
-  "postStartCommand": "/workspace/.devcontainer/start-services.sh",
-  "postAttachCommand": "source /workspace/.devcontainer/scripts/dev-aliases.sh",
-
-  "remoteUser": "node",
-  "containerUser": "node",
-
-  "mounts": [
-    "source=/var/run/docker.sock,target=/var/run/docker-host.sock,type=bind",
-    "source=${localWorkspaceFolder}/.git,target=/workspace/.git,type=bind,consistency=cached"
-  ],
-
+  
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "GitHub.copilot",
+        "GitHub.copilot-chat",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-docker",
+        "mtxr.sqltools",
+        "mtxr.sqltools-driver-pg"
+      ],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "eslint.validate": ["javascript", "typescript", "typescriptreact"],
+        "typescript.tsdk": "node_modules/typescript/lib"
+      }
+    }
+  },
+  
   "remoteEnv": {
     "NODE_ENV": "development",
-    "DATABASE_URL": "postgresql://tradinguser:tradingpass@postgres:5432/trading",
-    "REDIS_URL": "redis://redis:6379",
-    "ALPACA_API_KEY": "${localEnv:ALPACA_API_KEY}",
-    "ALPACA_SECRET_KEY": "${localEnv:ALPACA_SECRET_KEY}",
-    "ALPACA_BASE_URL": "${localEnv:ALPACA_BASE_URL:-https://paper-api.alpaca.markets}",
-    "TZ": "America/New_York"
+    "ALPACA_LIVE_API_KEY": "${localEnv:ALPACA_LIVE_API_KEY}",
+    "ALPACA_LIVE_API_SECRET": "${localEnv:ALPACA_LIVE_API_SECRET}",
+    "DATABASE_URL": "postgresql://trader:tradingpass123@postgres:5432/trading_db"
   }
 }

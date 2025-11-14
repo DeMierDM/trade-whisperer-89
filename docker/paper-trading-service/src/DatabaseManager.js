@@ -1,6 +1,7 @@
 /**
  * DatabaseManager - Manages paper trading database operations
  * Uses the existing paper trading schema from init-paper-trading.sql
+ * Enhanced with retry logic, connection pooling, and health checks
  */
 
 const { Pool } = require('pg');
@@ -10,35 +11,192 @@ class DatabaseManager {
     this.connectionString = connectionString;
     this.pool = null;
     this.connected = false;
+    this.healthCheckInterval = null;
+    this.reconnectAttempts = 0;
+    this.maxReconnectAttempts = 5;
+    this.reconnectDelay = 5000; // Start with 5 seconds
   }
 
   /**
-   * Initialize database connection
+   * Initialize database connection with retry logic
    */
   async initialize() {
-    try {
-      this.pool = new Pool({
-        connectionString: this.connectionString,
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-        max: 20,
-        idleTimeoutMillis: 30000,
-        connectionTimeoutMillis: 2000,
-      });
+    const maxAttempts = 3;
+    let attempt = 0;
 
-      // Test connection
-      const client = await this.pool.connect();
-      client.release();
+    while (attempt < maxAttempts) {
+      try {
+        attempt++;
+        console.log(`🔄 [Paper Trading] Connecting to database (attempt ${attempt}/${maxAttempts})...`);
 
-      this.connected = true;
-      console.log('✅ [Paper Trading] Database connection established');
-      
-      // Ensure paper trading tables exist
-      await this.ensurePaperTradingTables();
-      
-    } catch (error) {
-      console.error('❌ [Paper Trading] Database connection failed:', error);
-      throw error;
+        this.pool = new Pool({
+          connectionString: this.connectionString,
+          ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+          max: 20, // Maximum pool size
+          min: 2, // Minimum pool size
+          idleTimeoutMillis: 30000,
+          connectionTimeoutMillis: 5000,
+          statement_timeout: 30000, // 30 second query timeout
+          query_timeout: 30000,
+          application_name: 'paper-trading-service'
+        });
+
+        // Handle pool errors
+        this.pool.on('error', (err) => {
+          console.error('❌ [Paper Trading] Unexpected pool error:', err);
+          this.handlePoolError(err);
+        });
+
+        // Handle client connection errors
+        this.pool.on('connect', () => {
+          console.log('✅ [Paper Trading] New pool client connected');
+        });
+
+        // Test connection with timeout
+        const testClient = await Promise.race([
+          this.pool.connect(),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('Connection timeout')), 5000)
+          )
+        ]);
+
+        // Verify connection works
+        await testClient.query('SELECT NOW()');
+        testClient.release();
+
+        this.connected = true;
+        this.reconnectAttempts = 0;
+        console.log('✅ [Paper Trading] Database connection established');
+        
+        // Ensure paper trading tables exist
+        await this.ensurePaperTradingTables();
+
+        // Start health check monitoring
+        this.startHealthCheck();
+        
+        return; // Success, exit loop
+
+      } catch (error) {
+        console.error(`❌ [Paper Trading] Database connection failed (attempt ${attempt}/${maxAttempts}):`, error.message);
+        
+        if (attempt < maxAttempts) {
+          const delay = attempt * 2000; // Exponential backoff: 2s, 4s
+          console.log(`⏳ [Paper Trading] Retrying in ${delay/1000} seconds...`);
+          await this.sleep(delay);
+        } else {
+          console.error('❌ [Paper Trading] Max connection attempts reached. Database unavailable.');
+          throw error;
+        }
+      }
     }
+  }
+
+  /**
+   * Start periodic health check
+   */
+  startHealthCheck() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+    }
+
+    this.healthCheckInterval = setInterval(async () => {
+      try {
+        const client = await this.pool.connect();
+        await client.query('SELECT 1');
+        client.release();
+        
+        if (!this.connected) {
+          console.log('✅ [Paper Trading] Database connection restored');
+          this.connected = true;
+          this.reconnectAttempts = 0;
+        }
+      } catch (error) {
+        console.error('⚠️ [Paper Trading] Health check failed:', error.message);
+        this.connected = false;
+        
+        // Attempt reconnection
+        if (this.reconnectAttempts < this.maxReconnectAttempts) {
+          this.reconnectAttempts++;
+          console.log(`🔄 [Paper Trading] Attempting to reconnect (${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+          await this.reconnect();
+        }
+      }
+    }, 30000); // Check every 30 seconds
+  }
+
+  /**
+   * Handle pool errors and attempt reconnection
+   */
+  async handlePoolError(error) {
+    console.error('❌ [Paper Trading] Pool error detected:', error.message);
+    this.connected = false;
+
+    if (this.reconnectAttempts < this.maxReconnectAttempts) {
+      this.reconnectAttempts++;
+      const delay = Math.min(this.reconnectDelay * Math.pow(2, this.reconnectAttempts - 1), 60000);
+      console.log(`🔄 [Paper Trading] Reconnecting in ${delay/1000}s (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})...`);
+      
+      await this.sleep(delay);
+      await this.reconnect();
+    } else {
+      console.error('❌ [Paper Trading] Max reconnection attempts reached. Manual intervention required.');
+    }
+  }
+
+  /**
+   * Reconnect to database
+   */
+  async reconnect() {
+    try {
+      // Close existing pool
+      if (this.pool) {
+        await this.pool.end();
+      }
+
+      // Reinitialize
+      await this.initialize();
+    } catch (error) {
+      console.error('❌ [Paper Trading] Reconnection failed:', error.message);
+    }
+  }
+
+  /**
+   * Execute query with retry logic
+   */
+  async query(text, params, maxRetries = 2) {
+    let lastError;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        if (!this.connected) {
+          throw new Error('Database not connected');
+        }
+
+        const client = await this.pool.connect();
+        try {
+          const result = await client.query(text, params);
+          return result;
+        } finally {
+          client.release();
+        }
+      } catch (error) {
+        lastError = error;
+        console.error(`⚠️ [Paper Trading] Query failed (attempt ${attempt + 1}/${maxRetries + 1}):`, error.message);
+        
+        if (attempt < maxRetries) {
+          await this.sleep(1000 * (attempt + 1)); // 1s, 2s
+        }
+      }
+    }
+
+    throw lastError;
+  }
+
+  /**
+   * Sleep utility
+   */
+  sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**
@@ -240,23 +398,101 @@ class DatabaseManager {
   }
 
   /**
-   * Close a position
+   * Close a position and create trade record
    */
   async closePosition(positionId, exitPrice, exitReason) {
     try {
       const client = await this.pool.connect();
       
+      // First get the position details before closing
+      const positionResult = await client.query(`
+        SELECT * FROM paper_positions WHERE id = $1
+      `, [positionId]);
+      
+      if (positionResult.rows.length === 0) {
+        throw new Error(`Position not found: ${positionId}`);
+      }
+      
+      const position = positionResult.rows[0];
+      const entryTime = new Date(position.entry_time);
+      const exitTime = new Date();
+      const durationMinutes = Math.round((exitTime - entryTime) / (1000 * 60));
+      
+      // Calculate P&L
+      const grossPnL = (exitPrice - position.entry_price) * position.quantity;
+      const commission = Math.abs(position.quantity) * 0.65 * 2; // Entry + exit
+      const netPnL = grossPnL - commission;
+      const returnPct = (grossPnL / (position.entry_price * Math.abs(position.quantity))) * 100;
+      
+      // Update position as closed
       await client.query(`
         UPDATE paper_positions 
         SET current_price = $1, status = 'closed',
-            unrealized_pnl = ($1 - entry_price) * quantity,
+            unrealized_pnl = $2,
             updated_at = NOW()
         WHERE id = $3
-      `, [exitPrice, exitReason, positionId]);
-
+      `, [exitPrice, grossPnL, positionId]);
+      
+      // Create trade record
+      const tradeResult = await client.query(`
+        INSERT INTO paper_trades (
+          bot_id, position_id, contract_symbol, underlying_symbol,
+          option_type, strike_price, expiry_date, quantity,
+          entry_price, exit_price, entry_time, exit_time,
+          entry_signal_type, signal_strength, signal_reason,
+          exit_reason, gross_pnl, commission, net_pnl, return_pct,
+          underlying_price_entry, underlying_price_exit,
+          duration_minutes, dte_at_entry
+        ) VALUES (
+          $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, 
+          $17, $18, $19, $20, $21, $22, $23, $24
+        ) RETURNING id
+      `, [
+        position.bot_id,
+        positionId,
+        position.contract_symbol,
+        position.underlying_symbol,
+        position.option_type,
+        position.strike_price,
+        position.expiry_date,
+        position.quantity,
+        position.entry_price,
+        exitPrice,
+        entryTime,
+        exitTime,
+        position.entry_signal_type,
+        position.signal_strength,
+        position.signal_reason,
+        exitReason,
+        grossPnL,
+        commission,
+        netPnL,
+        returnPct,
+        position.underlying_price_at_entry,
+        null, // underlying_price_exit - would need current underlying price
+        durationMinutes,
+        0 // dte_at_entry - would need to calculate from entry date
+      ]);
+      
       client.release();
       
-      console.log(`✅ [Paper Trading] Position ${positionId} closed: ${exitReason}`);
+      const tradeId = tradeResult.rows[0].id;
+      
+      console.log(`✅ [Paper Trading] Position ${positionId} closed: ${exitReason}, Trade ${tradeId} created, P&L: $${netPnL.toFixed(2)}`);
+      
+      // Return trade details for broadcasting
+      return {
+        tradeId,
+        positionId,
+        botId: position.bot_id,
+        contractSymbol: position.contract_symbol,
+        side: position.quantity > 0 ? 'sell' : 'buy', // Closing position is opposite of entry
+        quantity: Math.abs(position.quantity),
+        fillPrice: exitPrice,
+        pnl: netPnL,
+        exitReason
+      };
+      
     } catch (error) {
       console.error('❌ [Paper Trading] Error closing position:', error);
       throw error;
@@ -292,6 +528,29 @@ class DatabaseManager {
       return result.rows;
     } catch (error) {
       console.error('❌ [Paper Trading] Error fetching positions:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get bot trades
+   */
+  async getBotTrades(botId, limit = 50) {
+    try {
+      const client = await this.pool.connect();
+      
+      const result = await client.query(`
+        SELECT * FROM paper_trades
+        WHERE bot_id = $1
+        ORDER BY exit_time DESC
+        LIMIT $2
+      `, [botId, limit]);
+
+      client.release();
+      
+      return result.rows;
+    } catch (error) {
+      console.error('❌ [Paper Trading] Error fetching trades:', error);
       throw error;
     }
   }

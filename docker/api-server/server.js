@@ -9,6 +9,16 @@ const path = require('path');
 const { decode, encode } = require('@msgpack/msgpack');
 require('dotenv').config();
 
+// Import error handling and validation middleware
+const { 
+  errorHandler, 
+  asyncHandler, 
+  notFoundHandler,
+  handleUnhandledRejection 
+} = require('./middleware/errorHandler');
+const validation = require('./middleware/validation');
+const { globalLimiter, strictLimiter } = require('./middleware/rateLimiter');
+
 const app = express();
 const PORT = process.env.PORT || 3001;
 
@@ -83,24 +93,45 @@ const server = http.createServer(app);
 // WebSocket server for live data streaming
 const wss = new WebSocket.Server({ server });
 
-// Database connection
+// Database connection with error handling
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
 });
 
-// Middleware
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('❌ [API Server] Unexpected database pool error:', err);
+});
+
+// Middleware - Apply rate limiting before other middleware
+app.use(globalLimiter.middleware());
 app.use(cors());
 app.use(express.json());
 
-// Test database connection
-pool.connect((err, client, release) => {
-  if (err) {
-    console.error('❌ Error connecting to database:', err);
-  } else {
-    console.log('✅ Connected to PostgreSQL database');
-    release();
+// Test database connection with retry logic
+let dbConnected = false;
+const testDatabaseConnection = async (attempt = 1, maxAttempts = 3) => {
+  try {
+    const client = await pool.connect();
+    await client.query('SELECT NOW()');
+    client.release();
+    dbConnected = true;
+    console.log('✅ [API Server] Connected to PostgreSQL database');
+  } catch (err) {
+    console.error(`❌ [API Server] Error connecting to database (attempt ${attempt}/${maxAttempts}):`, err.message);
+    if (attempt < maxAttempts) {
+      console.log(`⏳ [API Server] Retrying database connection in ${attempt * 2}s...`);
+      await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+      return testDatabaseConnection(attempt + 1, maxAttempts);
+    }
+    console.error('❌ [API Server] Failed to connect to database after maximum attempts');
   }
-});
+};
+
+testDatabaseConnection();
 
 // Health check endpoint - Hot reload test #2
 app.get('/health', (req, res) => {
@@ -243,20 +274,27 @@ app.get('/api/keys/:provider', async (req, res) => {
 });
 
 // Fetch market data endpoint (replaces Supabase Edge Function)
-app.post('/api/fetch-market-data', async (req, res) => {
-  try {
-    const { symbol, dataType, start, end, timeframe, useLiveKeys } = req.body;
+app.post('/api/fetch-market-data', asyncHandler(async (req, res) => {
+  const { symbol, dataType, start, end, timeframe, useLiveKeys } = req.body;
 
-    console.log(`📊 Fetching ${dataType} for ${symbol}`);
+  // Validate inputs
+  if (symbol) validation.validateSymbol(symbol);
+  if (start) validation.validateDate(start);
+  if (end) validation.validateDate(end);
+  if (start && end) validation.validateDateRange(start, end);
+  if (timeframe) validation.validateTimeframe(timeframe);
+  if (dataType) validation.validateDataType(dataType);
 
-    // SIMPLIFIED APPROACH: Always use Live API keys for market data
-    // We eliminated paper trading API calls - our backtesting system handles paper trading simulation
-    let apiKey, apiSecret;
-    
-    if (dataType === 'account' || dataType === 'orders') {
-      // For trading operations, always use live keys (but we won't actually trade - just for account info)
-      apiKey = process.env.ALPACA_LIVE_API_KEY;
-      apiSecret = process.env.ALPACA_LIVE_API_SECRET;
+  console.log(`📊 [API Server] Fetching ${dataType} for ${symbol}`);
+
+  // SIMPLIFIED APPROACH: Always use Live API keys for market data
+  // We eliminated paper trading API calls - our backtesting system handles paper trading simulation
+  let apiKey, apiSecret;
+  
+  if (dataType === 'account' || dataType === 'orders') {
+    // For trading operations, always use live keys (but we won't actually trade - just for account info)
+    apiKey = process.env.ALPACA_LIVE_API_KEY;
+    apiSecret = process.env.ALPACA_LIVE_API_SECRET;
       console.log('🔑 Using LIVE API keys for account/trading operations');
     } else {
       // For market data, use Live keys (they work and provide real data)
@@ -972,11 +1010,7 @@ app.post('/api/fetch-market-data', async (req, res) => {
     }
 
     res.status(400).json({ error: 'Invalid dataType' });
-  } catch (error) {
-    console.error('❌ Error in fetch-market-data:', error);
-    res.status(500).json({ error: error.message });
-  }
-});
+}));
 
 // Helper function to get default user ID
 async function getDefaultUserId() {
@@ -1331,7 +1365,7 @@ function connectToAlpacaOptions() {
   console.log('🚀 Connecting to Alpaca Options WebSocket (Free Indicative Stream)...');
   
   // Connect to Alpaca FREE INDICATIVE options WebSocket via standard data stream
-  // alpacaOptionsWebSocket = new WebSocket('wss://stream.data.alpaca.markets/v2/sip'); // DISABLED - Using new indicative feed instead
+  // REMOVED: Direct WebSocket connection - now using Data Bus Manager
   
   alpacaOptionsWebSocket.on('open', () => {
     console.log('✅ Connected to Alpaca Options WebSocket (Free Indicative)');
@@ -1465,321 +1499,7 @@ function connectToAlpacaOptions() {
   });
 }
 
-// Connect to Alpaca Stock WebSocket for live stock data
-// DISABLED: Direct Alpaca connections disabled - using Data Bus instead
-function connectToAlpacaStock() {
-  const apiKey = process.env.ALPACA_LIVE_API_KEY;
-  const apiSecret = process.env.ALPACA_LIVE_API_SECRET;
-
-  if (!apiKey || !apiSecret) {
-    console.error('❌ No API keys for Alpaca Stock WebSocket');
-    return;
-  }
-
-  // Clean up existing connection and listeners
-  if (alpacaStockWebSocket) {
-    alpacaStockWebSocket.removeAllListeners();
-    if (alpacaStockWebSocket.readyState === WebSocket.OPEN) {
-      alpacaStockWebSocket.close();
-    }
-  }
-
-  console.log('🚀 Connecting to Alpaca Stock WebSocket (IEX feed)...');
-
-  // Connect to Alpaca stock WebSocket (JSON format) - IEX feed for basic access
-  alpacaStockWebSocket = new WebSocket('wss://stream.data.alpaca.markets/v2/iex');
-  
-  alpacaStockWebSocket.on('open', () => {
-    console.log('✅ Connected to Alpaca Stock WebSocket');
-    
-    // Authenticate - uses JSON for stock feed
-    const authMessage = {
-      action: 'auth',
-      key: apiKey,
-      secret: apiSecret
-    };
-
-    console.log('🔑 Sending stock auth message (JSON):', authMessage);
-    alpacaStockWebSocket.send(JSON.stringify(authMessage));
-    
-    // Set up heartbeat to keep connection alive
-    if (stockHeartbeatInterval) {
-      clearInterval(stockHeartbeatInterval);
-    }
-    
-    stockHeartbeatInterval = setInterval(() => {
-      if (alpacaStockWebSocket && alpacaStockWebSocket.readyState === WebSocket.OPEN) {
-        alpacaStockWebSocket.ping();
-      }
-    }, 30000); // Ping every 30 seconds
-  });
-  
-  alpacaStockWebSocket.on('message', (data) => {
-    try {
-      // Parse JSON data (not msgpack for stock stream)
-      const messages = JSON.parse(data);
-
-      console.log('📦 Stock message received:', JSON.stringify(messages).substring(0, 300));
-
-      // Handle single message or array of messages
-      const messageArray = Array.isArray(messages) ? messages : [messages];
-
-      for (const message of messageArray) {
-        console.log('🔍 Processing stock message type:', message.T, 'msg:', message.msg);
-
-        if (message.T === 'success' && message.msg === 'connected') {
-          console.log('✅ Alpaca Stock WebSocket connected successfully');
-        } else if (message.T === 'success' && message.msg === 'authenticated') {
-          console.log('✅ Alpaca Stock WebSocket authenticated');
-          
-          // Subscribe to underlying symbols for dynamic options contract generation
-          const subscribeMessage = {
-            action: 'subscribe',
-            trades: UNDERLYING_SYMBOLS,
-            quotes: UNDERLYING_SYMBOLS
-          };
-          
-          console.log(`📡 Subscribing to underlying symbols for dynamic options: ${UNDERLYING_SYMBOLS.join(', ')}`);
-          alpacaStockWebSocket.send(JSON.stringify(subscribeMessage));
-          
-          // Initialize with current prices to generate initial options contracts
-          setTimeout(async () => {
-            console.log('🔄 Fetching initial underlying prices for options contract generation...');
-            for (const symbol of UNDERLYING_SYMBOLS) {
-              try {
-                const price = await getCurrentStockPrice(symbol);
-                if (price > 0) {
-                  currentUnderlyingPrices.set(symbol, price);
-                  console.log(`💹 Initial ${symbol} price: $${price.toFixed(2)}`);
-                }
-              } catch (error) {
-                console.warn(`⚠️ Could not fetch initial price for ${symbol}:`, error.message);
-              }
-            }
-            
-            // Generate initial options contracts
-            updateSubscriptionSymbols();
-          }, 2000);
-        } else if (message.T === 'error') {
-          console.error('❌ Alpaca Stock error:', message.code, message.msg);
-
-          // Handle overnight feed access denial (401 not authenticated)
-          if (message.code === 401 && isOvernightSession()) {
-            console.log('⚠️ OVERNIGHT FEED ACCESS DENIED');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-            console.log('📋 OVERNIGHT DATA ACCESS REQUIREMENTS:');
-            console.log('   The v1beta1/overnight feed requires a special Alpaca subscription.');
-            console.log('   Contact Alpaca sales for pricing and enablement.');
-            console.log('   Website: https://alpaca.markets/data');
-            console.log('');
-            console.log('💡 CURRENT STATUS:');
-            console.log('   ✅ Automatic feed switching: CONFIGURED');
-            console.log('   ✅ Regular hours (4 AM - 8 PM): IEX feed (WORKING)');
-            console.log('   ❌ Overnight hours (8 PM - 4 AM): Requires paid subscription');
-            console.log('');
-            console.log('🔄 FALLBACK: Reconnecting to IEX feed for now...');
-            console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-
-            // Fallback: Force reconnect using IEX feed
-            setTimeout(() => {
-              if (alpacaStockWebSocket) {
-                alpacaStockWebSocket.removeAllListeners();
-                if (alpacaStockWebSocket.readyState === WebSocket.OPEN) {
-                  alpacaStockWebSocket.close();
-                }
-              }
-
-              console.log('🔄 Connecting to IEX feed as fallback...');
-              alpacaStockWebSocket = new WebSocket('wss://stream.data.alpaca.markets/v2/iex');
-
-              alpacaStockWebSocket.on('open', () => {
-                console.log('✅ Fallback: Connected to IEX feed');
-                const authMessage = {
-                  action: 'auth',
-                  key: process.env.ALPACA_LIVE_API_KEY,
-                  secret: process.env.ALPACA_LIVE_API_SECRET
-                };
-                alpacaStockWebSocket.send(JSON.stringify(authMessage));
-              });
-
-              // Re-add all the other event handlers
-              connectToAlpacaStock();
-            }, 2000);
-          }
-        } else if (message.T === 'subscription') {
-          console.log('📡 Stock subscription confirmed - Quotes:', message.quotes?.join(', ') || 'none', '| Trades:', message.trades?.join(', ') || 'none');
-        } else if (message.T === 't') {
-          // Stock TRADE - actual executed transaction for chart OHLC
-          const trade = {
-            symbol: message.S,
-            price: parseFloat(message.p) || 0,
-            size: parseInt(message.s) || 0,
-            timestamp: message.t,
-            exchange: message.x || 'unknown',
-            conditions: message.c || [],
-            data_source: 'stock_trade'
-          };
-
-          console.log('💰 LIVE STOCK TRADE from Alpaca:', trade.symbol, 'Price:', trade.price, 'Size:', trade.size);
-
-          // Real-time bar aggregation for charts
-          updateBarWithTrade(trade.symbol, trade.price, trade.size, trade.timestamp);
-
-          // Update underlying price for dynamic options contract generation
-          if (UNDERLYING_SYMBOLS.includes(trade.symbol) && trade.price > 0) {
-            const oldPrice = currentUnderlyingPrices.get(trade.symbol);
-            currentUnderlyingPrices.set(trade.symbol, trade.price);
-            console.log(`💹 Updated ${trade.symbol} price: ${oldPrice?.toFixed(2) || 'N/A'} → $${trade.price.toFixed(2)}`);
-            
-            // Update options subscriptions if price changed significantly (>$0.50)
-            if (!oldPrice || Math.abs(trade.price - oldPrice) > 0.5) {
-              console.log(`🔄 Significant price change for ${trade.symbol}, updating options subscriptions...`);
-              setTimeout(updateSubscriptionSymbols, 1000); // Debounce updates
-            }
-          }
-
-          // Log to CSV file for historical storage
-          logStockTrade(trade);
-
-          // Broadcast to all connected frontend clients
-          const broadcastData = JSON.stringify({
-            type: 'stock_trade',
-            data: trade
-          });
-
-          let broadcastCount = 0;
-          connectedClients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(broadcastData);
-              broadcastCount++;
-            }
-          });
-
-          if (broadcastCount > 0) {
-            console.log(`📡 Broadcasted trade to ${broadcastCount} client(s)`);
-          }
-        } else if (message.T === 'q') {
-          // Stock QUOTE - bid/ask for spread analysis
-          const quote = {
-            symbol: message.S,
-            bid: parseFloat(message.bp) || 0,
-            ask: parseFloat(message.ap) || 0,
-            bid_size: parseInt(message.bs) || 0,
-            ask_size: parseInt(message.as) || 0,
-            timestamp: message.t,
-            data_source: 'stock_quote'
-          };
-
-          console.log('📊 LIVE STOCK QUOTE from Alpaca:', quote.symbol, 'Bid:', quote.bid, 'Ask:', quote.ask);
-
-          // Update underlying price from quote mid-price for dynamic options contract generation
-          if (UNDERLYING_SYMBOLS.includes(quote.symbol) && quote.bid > 0 && quote.ask > 0) {
-            const midPrice = (quote.bid + quote.ask) / 2;
-            const oldPrice = currentUnderlyingPrices.get(quote.symbol);
-            
-            // Only update if we don't have a recent trade price or if quote is significantly different
-            if (!oldPrice || Math.abs(midPrice - oldPrice) > 0.25) {
-              currentUnderlyingPrices.set(quote.symbol, midPrice);
-              console.log(`📈 Updated ${quote.symbol} price from quote: ${oldPrice?.toFixed(2) || 'N/A'} → $${midPrice.toFixed(2)} (mid)`);
-              
-              // Update options subscriptions if price changed significantly
-              if (!oldPrice || Math.abs(midPrice - oldPrice) > 0.5) {
-                console.log(`🔄 Significant price change for ${quote.symbol}, updating options subscriptions...`);
-                setTimeout(updateSubscriptionSymbols, 1000); // Debounce updates
-              }
-            }
-          }
-
-          // Log to CSV file for historical storage
-          logStockQuote(quote);
-
-          // Broadcast to all connected frontend clients
-          const broadcastData = JSON.stringify({
-            type: 'stock_quote',
-            data: quote
-          });
-
-          // Throttle: only broadcast if enough time has passed
-          const now = Date.now();
-          const lastBroadcast = quoteThrottleMap.get(quote.symbol + '_stock') || 0;
-
-          if (now - lastBroadcast < QUOTE_THROTTLE_MS) {
-            return; // Skip - too soon
-          }
-
-          quoteThrottleMap.set(quote.symbol + '_stock', now);
-
-          let broadcastCount = 0;
-          connectedClients.forEach(client => {
-            if (client.readyState === WebSocket.OPEN) {
-              client.send(broadcastData);
-              broadcastCount++;
-            } else {
-              // Clean up closed connections
-              connectedClients.delete(client);
-            }
-          });
-
-          if (broadcastCount > 0 && Math.random() < 0.01) { // Log 1% of broadcasts
-            console.log(`📡 Broadcasted stock quote to ${broadcastCount} client(s)`);
-          }
-
-          // 🧪 TEST MODE: Generate synthetic trade from quote mid-price for chart testing
-          // This helps test chart updates when real trades are sparse
-          const ENABLE_SYNTHETIC_TRADES = false; // DISABLED - Real trades are flowing
-          if (ENABLE_SYNTHETIC_TRADES && quote.bid > 0 && quote.ask > 0) {
-            const midPrice = (quote.bid + quote.ask) / 2;
-            const syntheticTrade = {
-              symbol: quote.symbol,
-              price: midPrice,
-              size: 100, // Simulated size
-              timestamp: quote.timestamp,
-              exchange: 'SYNTHETIC',
-              conditions: ['TEST'],
-              data_source: 'synthetic_trade'
-            };
-
-            const tradeBroadcast = JSON.stringify({
-              type: 'stock_trade',
-              data: syntheticTrade
-            });
-
-            connectedClients.forEach(client => {
-              if (client.readyState === WebSocket.OPEN) {
-                client.send(tradeBroadcast);
-              }
-            });
-
-            // Always log for debugging
-            console.log('🧪 Synthetic trade generated:', syntheticTrade.symbol, '@', syntheticTrade.price.toFixed(2), '(from quote mid-price)');
-            
-            // Log synthetic trade to CSV as well
-            logStockTrade(syntheticTrade);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('❌ Error processing Alpaca stock message:', error.message);
-    }
-  });
-  
-  alpacaStockWebSocket.on('error', (error) => {
-    console.error('❌ Alpaca Stock WebSocket error:', error);
-  });
-  
-  alpacaStockWebSocket.on('close', () => {
-    console.log('❌ Alpaca Stock WebSocket closed, reconnecting in 5s...');
-    
-    // Clear heartbeat interval
-    if (stockHeartbeatInterval) {
-      clearInterval(stockHeartbeatInterval);
-      stockHeartbeatInterval = null;
-    }
-    
-    setTimeout(connectToAlpacaStock, 5000);
-  });
-}
-
+// REMOVED: Disabled connectToAlpacaStock function - now using Data Bus Manager for all stock data
 // Handle frontend WebSocket connections
 wss.on('connection', (ws, req) => {
   const clientIP = req.socket.remoteAddress;
@@ -1845,9 +1565,7 @@ wss.on('connection', (ws, req) => {
 });
 
 // Start Alpaca connections via Data Bus
-// DISABLED: Direct WebSocket connections disabled - using Data Bus instead
-// connectToAlpacaOptions(); // Disabled - will use Data Bus with options channels instead
-// connectToAlpacaStock(); // Keep disabled - using Data Bus for stock data
+// REMOVED: Direct Alpaca connections - now using Data Bus Manager for all market data
 
 // Initialize Data Bus Client
 const BusClient = require('./BusClient');
@@ -2825,9 +2543,24 @@ async function getRecentOptionsTrades(symbol) {
 
 console.log('⚡ [Options Matrix] Enhanced options matrix endpoint added');
 
+// 404 handler - must come before error handler
+app.use(notFoundHandler);
+
+// Error handling middleware - must be last
+app.use(errorHandler);
+
 // Graceful shutdown
 process.on('SIGINT', async () => {
-  console.log('🛑 Shutting down server...');
+  console.log('🛑 [API Server] Shutting down server...');
   await pool.end();
-  process.exit(0);
+  wss.close(() => {
+    console.log('🛑 [API Server] WebSocket server closed');
+  });
+  server.close(() => {
+    console.log('🛑 [API Server] HTTP server closed');
+    process.exit(0);
+  });
 });
+
+// Handle unhandled rejections and uncaught exceptions
+handleUnhandledRejection();

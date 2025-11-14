@@ -1,24 +1,43 @@
 /**
  * BusClient - Connects to existing Data Bus Manager
  * Reuses the same pattern from API server
+ * Enhanced with connection state management and heartbeat
  */
 
 const WebSocket = require('ws');
 const EventEmitter = require('eventemitter3');
 
+// Connection states
+const ConnectionState = {
+  DISCONNECTED: 'disconnected',
+  CONNECTING: 'connecting',
+  CONNECTED: 'connected',
+  RECONNECTING: 'reconnecting',
+  ERROR: 'error'
+};
+
 class BusClient extends EventEmitter {
-  constructor(busUrl = 'ws://api_server:3001') {
+  constructor(busUrl = 'ws://data_bus_manager:3004') {
     super();
 
     this.busUrl = busUrl;
     this.ws = null;
     this.subscriptions = new Set();
-    this.connected = false;
+    this.connectionState = ConnectionState.DISCONNECTED;
     this.reconnectDelay = 5000;
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
+    this.reconnectBackoffMultiplier = 1.5; // Exponential backoff
+    this.maxReconnectDelay = 60000; // Max 1 minute
     
-    // Context7: Real-time data processing
+    // Heartbeat mechanism
+    this.heartbeatInterval = null;
+    this.heartbeatTimeout = null;
+    this.heartbeatIntervalMs = 30000; // Send ping every 30s
+    this.heartbeatTimeoutMs = 10000; // Expect pong within 10s
+    this.lastHeartbeat = null;
+    
+    // CRITICAL FIX: Connect to Data Bus Manager for raw market data instead of filtered API server data
     this.stockData = new Map();
     this.optionsData = new Map();
     this.realtimeBars = new Map();
@@ -27,24 +46,54 @@ class BusClient extends EventEmitter {
   }
 
   /**
-   * Connect to the data bus
+   * Get current connection state
+   */
+  getConnectionState() {
+    return this.connectionState;
+  }
+
+  /**
+   * Check if connected
+   */
+  isConnected() {
+    return this.connectionState === ConnectionState.CONNECTED && 
+           this.ws && 
+           this.ws.readyState === WebSocket.OPEN;
+  }
+
+  /**
+   * Connect to the data bus with enhanced connection management
    */
   async connect() {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+    if (this.isConnected()) {
       console.log('⚠️ [Paper Trading] Already connected to data bus');
       return;
     }
 
+    // Prevent multiple simultaneous connection attempts
+    if (this.connectionState === ConnectionState.CONNECTING) {
+      console.log('⚠️ [Paper Trading] Connection attempt already in progress');
+      return;
+    }
+
     try {
+      this.connectionState = ConnectionState.CONNECTING;
       console.log(`🚀 [Paper Trading] Connecting to data bus: ${this.busUrl}`);
 
-      this.ws = new WebSocket(this.busUrl);
+      this.ws = new WebSocket(this.busUrl, {
+        handshakeTimeout: 10000, // 10 second connection timeout
+        perMessageDeflate: false // Disable compression for lower latency
+      });
 
       this.ws.on('open', () => {
         console.log('✅ [Paper Trading] Connected to data bus');
-        this.connected = true;
+        this.connectionState = ConnectionState.CONNECTED;
         this.reconnectAttempts = 0;
+        this.reconnectDelay = 5000; // Reset to initial delay
         this.emit('connected');
+
+        // Start heartbeat
+        this.startHeartbeat();
 
         // Resubscribe to all channels
         if (this.subscriptions.size > 0) {
@@ -56,31 +105,125 @@ class BusClient extends EventEmitter {
         this.handleMessage(data);
       });
 
-      this.ws.on('error', (error) => {
-        console.error('❌ [Paper Trading] Data bus WebSocket error:', error.message);
-        this.connected = false;
-        this.emit('error', error);
+      this.ws.on('ping', () => {
+        this.lastHeartbeat = Date.now();
+        if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+          this.ws.pong();
+        }
       });
 
-      this.ws.on('close', () => {
-        console.log('❌ [Paper Trading] Disconnected from data bus');
-        this.connected = false;
-        this.emit('disconnected');
+      this.ws.on('pong', () => {
+        this.lastHeartbeat = Date.now();
+        if (this.heartbeatTimeout) {
+          clearTimeout(this.heartbeatTimeout);
+          this.heartbeatTimeout = null;
+        }
+      });
 
-        // Attempt to reconnect
-        if (this.reconnectAttempts < this.maxReconnectAttempts) {
-          this.reconnectAttempts++;
-          console.log(`🔄 [Paper Trading] Reconnecting in ${this.reconnectDelay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
-          setTimeout(() => this.connect(), this.reconnectDelay);
-        } else {
-          console.error('❌ [Paper Trading] Max reconnect attempts reached. Giving up.');
+      this.ws.on('error', (error) => {
+        console.error('❌ [Paper Trading] Data bus WebSocket error:', error.message);
+        this.connectionState = ConnectionState.ERROR;
+        this.emit('error', error);
+        this.stopHeartbeat();
+      });
+
+      this.ws.on('close', (code, reason) => {
+        console.log(`❌ [Paper Trading] Disconnected from data bus (code: ${code}, reason: ${reason || 'none'})`);
+        const wasConnected = this.connectionState === ConnectionState.CONNECTED;
+        this.connectionState = ConnectionState.DISCONNECTED;
+        this.emit('disconnected', { code, reason });
+        this.stopHeartbeat();
+
+        // Only attempt reconnection if we were previously connected or in a reconnecting state
+        if (wasConnected || this.reconnectAttempts > 0) {
+          this.attemptReconnection();
         }
       });
 
     } catch (error) {
       console.error('❌ [Paper Trading] Failed to connect to data bus:', error.message);
-      this.connected = false;
+      this.connectionState = ConnectionState.ERROR;
+      this.attemptReconnection();
     }
+  }
+
+  /**
+   * Attempt reconnection with exponential backoff
+   */
+  attemptReconnection() {
+    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      console.error('❌ [Paper Trading] Max reconnect attempts reached. Giving up.');
+      this.connectionState = ConnectionState.ERROR;
+      this.emit('max_reconnect_attempts_reached');
+      return;
+    }
+
+    this.reconnectAttempts++;
+    this.connectionState = ConnectionState.RECONNECTING;
+    
+    // Calculate delay with exponential backoff
+    const delay = Math.min(
+      this.reconnectDelay * Math.pow(this.reconnectBackoffMultiplier, this.reconnectAttempts - 1),
+      this.maxReconnectDelay
+    );
+
+    console.log(`🔄 [Paper Trading] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+    
+    setTimeout(() => {
+      if (this.connectionState === ConnectionState.RECONNECTING) {
+        this.connect();
+      }
+    }, delay);
+  }
+
+  /**
+   * Start heartbeat mechanism
+   */
+  startHeartbeat() {
+    this.stopHeartbeat();
+    this.lastHeartbeat = Date.now();
+
+    this.heartbeatInterval = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.ping();
+          
+          // Set timeout to detect dead connections
+          this.heartbeatTimeout = setTimeout(() => {
+            console.error('⚠️ [Paper Trading] Heartbeat timeout - connection may be dead');
+            this.ws.terminate();
+          }, this.heartbeatTimeoutMs);
+        } catch (error) {
+          console.error('❌ [Paper Trading] Error sending heartbeat:', error.message);
+        }
+      }
+    }, this.heartbeatIntervalMs);
+  }
+
+  /**
+   * Stop heartbeat mechanism
+   */
+  stopHeartbeat() {
+    if (this.heartbeatInterval) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+
+    if (this.heartbeatTimeout) {
+      clearTimeout(this.heartbeatTimeout);
+      this.heartbeatTimeout = null;
+    }
+  }
+
+  /**
+   * Get heartbeat status
+   */
+  getHeartbeatStatus() {
+    return {
+      lastHeartbeat: this.lastHeartbeat,
+      timeSinceLastHeartbeat: this.lastHeartbeat ? Date.now() - this.lastHeartbeat : null,
+      isHealthy: this.lastHeartbeat ? (Date.now() - this.lastHeartbeat) < (this.heartbeatIntervalMs * 2) : false
+    };
   }
 
   /**
@@ -89,6 +232,9 @@ class BusClient extends EventEmitter {
   handleMessage(data) {
     try {
       const message = JSON.parse(data);
+
+      // Update heartbeat on any message received
+      this.lastHeartbeat = Date.now();
 
       // Context7: Process real-time stock and options data
       if (message.type === 'stock_quote') {
