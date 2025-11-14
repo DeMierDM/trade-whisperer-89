@@ -1,0 +1,32 @@
+{
+  "name": "Trade Whisperer (Simple)",
+  "image": "mcr.microsoft.com/devcontainers/typescript-node:18",
+  
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {},
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.vscode-typescript-next",
+        "bradlc.vscode-tailwindcss", 
+        "esbenp.prettier-vscode",
+        "ms-python.python"
+      ]
+    }
+  },
+
+  "forwardPorts": [8080, 3001, 3002, 3003, 3004],
+  "portsAttributes": {
+    "8080": {
+      "label": "Frontend",
+      "onAutoForward": "openPreview"
+    }
+  },
+
+  "postCreateCommand": "npm install",
+  "remoteUser": "node"
+}

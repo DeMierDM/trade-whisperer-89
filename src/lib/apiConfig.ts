@@ -8,10 +8,10 @@ const isDevelopment = import.meta.env.DEV;
 
 // API Endpoints Configuration
 export const API_CONFIG = {
-  // Main API Server - handles market data, WebSocket, auth
+  // Main API Server - handles market data, WebSocket, auth (API Server)
   MAIN_API: {
     HOST: 'localhost',
-    PORT: 3001,
+    PORT: 3001,  // Updated to API server port (has options-matrix-data endpoint)
     PROTOCOL: 'http',
     WS_PROTOCOL: 'ws',
     get BASE_URL() {
@@ -69,6 +69,11 @@ export const ENDPOINTS = {
   // WebSocket Endpoints (Port 3001)
   WEBSOCKET: `${API_CONFIG.MAIN_API.WS_URL}/ws`,
   ALPACA_WEBSOCKET: `${API_CONFIG.MAIN_API.WS_URL}/ws`,
+  
+  // Live Trading Chart Data (Port 3001) - for current market data
+  TRADING_CHART_DATA: `${API_CONFIG.MAIN_API.BASE_URL}/api/trading-chart-data`,
+  OPTION_QUOTES: `${API_CONFIG.MAIN_API.BASE_URL}/api/option-quotes`,
+  OPTIONS_MATRIX_DATA: `${API_CONFIG.MAIN_API.BASE_URL}/api/options-matrix-data`,
   
   // Backtesting Server Endpoints (Port 3002) 
   BACKTEST: `${API_CONFIG.BACKTESTING.BASE_URL}/api/backtest`,

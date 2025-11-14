@@ -8,6 +8,7 @@ const RequestDeduplicator = require('./RequestDeduplicator');
 const SQLCacheLayer = require('./SQLCacheLayer');
 const StockDataChannel = require('./StockDataChannel');
 const OptionsDataChannel = require('./OptionsDataChannel');
+const BarAggregator = require('./BarAggregator');
 
 class DataBusManager extends EventEmitter {
   constructor(config) {
@@ -29,6 +30,9 @@ class DataBusManager extends EventEmitter {
       flushInterval: config.sqlFlushInterval || 5000
     });
 
+    // Initialize bar aggregator for OHLCV bars
+    this.barAggregator = new BarAggregator(this.sqlCache);
+
     // Initialize data channels
     this.stockChannel = new StockDataChannel(
       this,
@@ -45,10 +49,29 @@ class DataBusManager extends EventEmitter {
     // Subscribe SQL cache to all data for automatic caching
     this.on('stock.*', (channel, data) => {
       this.sqlCache.handleStockUpdate(channel, data);
+      
+      // If this is trade data, also send to bar aggregator
+      if (channel.includes('trade') && data) {
+        if (Array.isArray(data)) {
+          data.forEach(trade => this.barAggregator.onTradeReceived(trade));
+        } else {
+          this.barAggregator.onTradeReceived(data);
+        }
+      }
     });
 
     this.on('options.*', (channel, data) => {
-      this.sqlCache.handleOptionsUpdate(channel, data);
+      // Route to appropriate handler based on data type
+      if (channel.includes('snapshot')) {
+        this.sqlCache.handleSnapshotUpdate(channel, data);
+      } else if (channel.includes('quote')) {
+        this.sqlCache.handleOptionsQuoteUpdate(channel, data);
+      } else if (channel.includes('trade')) {
+        this.sqlCache.handleOptionsTradeUpdate(channel, data);
+      } else {
+        // Legacy handler for backward compatibility
+        this.sqlCache.handleOptionsUpdate(channel, data);
+      }
     });
 
     console.log('✅ DataBusManager initialized');
@@ -63,6 +86,10 @@ class DataBusManager extends EventEmitter {
     try {
       // Initialize stock data channel
       await this.stockChannel.initialize();
+
+      // Initialize options data channel with WebSocket
+      console.log('🚀 Initializing options WebSocket...');
+      await this.optionsChannel.initializeWebSocket();
 
       console.log('✅ DataBusManager fully initialized');
     } catch (error) {
@@ -145,6 +172,34 @@ class DataBusManager extends EventEmitter {
    */
   async getHistoricalOptionsData(symbol, startDate, endDate) {
     return this.sqlCache.getHistoricalOptions(symbol, startDate, endDate);
+  }
+
+  /**
+   * Get option snapshots with Greeks (delegates to OptionsDataChannel)
+   */
+  async getOptionSnapshots(symbols) {
+    return this.optionsChannel.getOptionSnapshots(symbols);
+  }
+
+  /**
+   * Start polling Greeks for active contracts
+   */
+  startGreeksPolling(symbols, intervalMs = 60000) {
+    return this.optionsChannel.startGreeksPolling(symbols, intervalMs);
+  }
+
+  /**
+   * Stop Greeks polling
+   */
+  stopGreeksPolling() {
+    return this.optionsChannel.stopGreeksPolling();
+  }
+
+  /**
+   * Get historical aggregated bars (OHLCV)
+   */
+  async getHistoricalBars(symbol, timeframe, startDate, endDate) {
+    return this.sqlCache.getHistoricalBars(symbol, timeframe, startDate, endDate);
   }
 
   /**

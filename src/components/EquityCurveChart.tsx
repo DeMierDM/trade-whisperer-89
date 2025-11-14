@@ -49,7 +49,7 @@ export const EquityCurveChart = forwardRef<EquityCurveChartAPI, EquityCurveChart
           currentEquity.current += pnl;
           const unixTime = Math.floor(new Date(timestamp).getTime() / 1000);
           equitySeriesRef.current.update({
-            time: unixTime,
+            time: unixTime as any,
             value: currentEquity.current
           });
         }
@@ -62,7 +62,7 @@ export const EquityCurveChart = forwardRef<EquityCurveChartAPI, EquityCurveChart
       const initChart = async () => {
         try {
           // Dynamic import like the main chart
-          const { createChart, ColorType, LineStyle } = await import('lightweight-charts');
+          const { createChart, ColorType, LineStyle, LineSeries } = await import('lightweight-charts');
 
           // Create chart with same styling as main chart
           const chart = createChart(chartContainerRef.current!, {
@@ -94,7 +94,7 @@ export const EquityCurveChart = forwardRef<EquityCurveChartAPI, EquityCurveChart
           });
 
           // Create equity line series
-          const equitySeries = chart.addLineSeries({
+          const equitySeries = chart.addSeries(LineSeries, {
             color: '#22c55e', // Success green
             lineWidth: 2,
             lineStyle: LineStyle.Solid,
@@ -106,7 +106,7 @@ export const EquityCurveChart = forwardRef<EquityCurveChartAPI, EquityCurveChart
           });
 
           // Add baseline at initial capital
-          const baselineSeries = chart.addLineSeries({
+          const baselineSeries = chart.addSeries(LineSeries, {
             color: 'hsl(var(--muted-foreground))',
             lineWidth: 1,
             lineStyle: LineStyle.Dashed,
@@ -123,7 +123,7 @@ export const EquityCurveChart = forwardRef<EquityCurveChartAPI, EquityCurveChart
           // Set initial data if provided
           if (data && data.length > 0) {
             const formattedData = data.map(point => ({
-              time: Math.floor(new Date(point.time).getTime() / 1000),
+              time: Math.floor(new Date(point.time).getTime() / 1000) as any,
               value: point.value
             }));
             
@@ -133,8 +133,8 @@ export const EquityCurveChart = forwardRef<EquityCurveChartAPI, EquityCurveChart
             // Set baseline data (horizontal line at initial capital)
             if (data.length >= 2) {
               baselineSeries.setData([
-                { time: Math.floor(new Date(data[0].time).getTime() / 1000), value: initialCapital },
-                { time: Math.floor(new Date(data[data.length - 1].time).getTime() / 1000), value: initialCapital }
+                { time: Math.floor(new Date(data[0].time).getTime() / 1000) as any, value: initialCapital },
+                { time: Math.floor(new Date(data[data.length - 1].time).getTime() / 1000) as any, value: initialCapital }
               ]);
             }
           }

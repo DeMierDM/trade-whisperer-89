@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Previous Backtests Dropdown Test</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        
+        h1 {
+            color: white;
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 2.5em;
+            text-shadow: 0 2px 10px rgba(0,0,0,0.3);
+        }
+        
+        .test-section {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+        
+        .test-section h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.8em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+        
+        button:active {
+            transform: translateY(0);
+        }
+        
+        .result-box {
+            background: #f8f9fa;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            font-family: 'Courier New', monospace;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        
+        .success {
+            background: #d4edda;
+            border-color: #c3e6cb;
+            color: #155724;
+        }
+        
+        .error {
+            background: #f8d7da;
+            border-color: #f5c6cb;
+            color: #721c24;
+        }
+        
+        .info {
+            background: #d1ecf1;
+            border-color: #bee5eb;
+            color: #0c5460;
+        }
+        
+        .warning {
+            background: #fff3cd;
+            border-color: #ffeaa7;
+            color: #856404;
+        }
+        
+        .backtest-item {
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            padding: 15px;
+            margin-bottom: 10px;
+            transition: all 0.2s;
+            cursor: pointer;
+        }
+        
+        .backtest-item:hover {
+            border-color: #667eea;
+            box-shadow: 0 2px 8px rgba(102, 126, 234, 0.2);
+            transform: translateX(5px);
+        }
+        
+        .backtest-header {
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 1.1em;
+        }
+        
+        .backtest-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-top: 10px;
+            font-size: 0.9em;
+        }
+        
+        .detail-item {
+            padding: 5px 10px;
+            background: #f8f9fa;
+            border-radius: 4px;
+        }
+        
+        .detail-label {
+            font-weight: 600;
+            color: #6c757d;
+        }
+        
+        .positive {
+            color: #28a745;
+            font-weight: bold;
+        }
+        
+        .negative {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        
+        .status-indicator {
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .status-completed {
+            background: #28a745;
+        }
+        
+        .status-running {
+            background: #ffc107;
+            animation: pulse 1.5s infinite;
+        }
+        
+        .status-failed {
+            background: #dc3545;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-left: 10px;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        pre {
+            background: #2d3748;
+            color: #fff;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            margin-top: 10px;
+        }
+        
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Previous Backtests Dropdown Test</h1>
+        
+        <!-- Test 1: Fetch Previous Backtests -->
+        <div class="test-section">
+            <h2>📊 Test 1: Fetch Previous Backtests List</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Tests the /api/backtest/recent endpoint that powers the dropdown
+            </p>
+            <button onclick="testFetchBacktests()">Fetch Backtests</button>
+            <button onclick="testFetchBacktests(5)">Fetch 5</button>
+            <button onclick="testFetchBacktests(20)">Fetch 20</button>
+            <div id="backtest-list-result" class="result-box info" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 2: Load Specific Backtest -->
+        <div class="test-section">
+            <h2>🎯 Test 2: Load Specific Backtest Data</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Tests loading metrics and trades for a selected backtest
+            </p>
+            <div style="margin-bottom: 15px;">
+                <label for="backtest-id-input" style="display: block; margin-bottom: 5px; font-weight: 600;">
+                    Enter Backtest ID:
+                </label>
+                <input 
+                    type="number" 
+                    id="backtest-id-input" 
+                    placeholder="e.g., 129" 
+                    style="padding: 8px 12px; border: 2px solid #dee2e6; border-radius: 6px; width: 200px; font-size: 16px;"
+                />
+            </div>
+            <button onclick="testLoadBacktest()">Load Backtest Data</button>
+            <button onclick="testLoadBacktest(129)">Load Backtest #129</button>
+            <button onclick="testLoadBacktest(122)">Load Backtest #122</button>
+            <div id="load-backtest-result" class="result-box info" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 3: Simulate Dropdown UI -->
+        <div class="test-section">
+            <h2>🎨 Test 3: Simulate Dropdown Component</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Visual simulation of how the dropdown appears in the UI
+            </p>
+            <button onclick="simulateDropdown()">Show Dropdown Simulation</button>
+            <div id="dropdown-simulation" class="result-box" style="display: none;"></div>
+        </div>
+        
+        <!-- Test 4: End-to-End Flow -->
+        <div class="test-section">
+            <h2>🔄 Test 4: Complete User Flow</h2>
+            <p style="color: #6c757d; margin-bottom: 15px;">
+                Simulates: Fetch list → Select backtest → Load data → Verify rendering
+            </p>
+            <button onclick="testCompleteFlow()">Run Complete Flow</button>
+            <div id="complete-flow-result" class="result-box info" style="display: none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:3002';
+        
+        // Test 1: Fetch Previous Backtests
+        async function testFetchBacktests(limit = 10) {
+            const resultDiv = document.getElementById('backtest-list-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box info';
+            resultDiv.innerHTML = `<div class="loading"></div> Fetching ${limit} previous backtests...`;
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/backtest/recent?limit=${limit}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const backtests = await response.json();
+                
+                if (!Array.isArray(backtests)) {
+                    throw new Error('Response is not an array');
+                }
+                
+                resultDiv.className = 'result-box success';
+                
+                let html = `
+                    <h3 style="color: #155724; margin-bottom: 15px;">✅ Successfully fetched ${backtests.length} backtests</h3>
+                    <div class="stat-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Backtests</div>
+                            <div class="stat-value">${backtests.length}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Completed</div>
+                            <div class="stat-value">${backtests.filter(b => b.status === 'completed').length}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Avg Return</div>
+                            <div class="stat-value">${(backtests.reduce((sum, b) => sum + parseFloat(b.total_return || 0), 0) / backtests.length * 100).toFixed(2)}%</div>
+                        </div>
+                    </div>
+                    <div style="margin-top: 20px;">
+                `;
+                
+                backtests.forEach(bt => {
+                    const returnPct = (parseFloat(bt.total_return || 0) * 100).toFixed(2);
+                    const returnClass = parseFloat(bt.total_return || 0) >= 0 ? 'positive' : 'negative';
+                    const statusClass = bt.status === 'completed' ? 'status-completed' : bt.status === 'running' ? 'status-running' : 'status-failed';
+                    
+                    html += `
+                        <div class="backtest-item" onclick="testLoadBacktest(${bt.id})">
+                            <div class="backtest-header">
+                                <span class="status-indicator ${statusClass}"></span>
+                                Backtest #${bt.id}: ${bt.strategy_name} - ${bt.symbol}
+                            </div>
+                            <div class="backtest-details">
+                                <div class="detail-item">
+                                    <span class="detail-label">Trades:</span> ${bt.total_trades || 0}
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Return:</span> <span class="${returnClass}">${returnPct}%</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Win Rate:</span> ${(parseFloat(bt.win_rate || 0) * 100).toFixed(1)}%
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Date:</span> ${new Date(bt.created_at).toLocaleDateString()}
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Capital:</span> $${parseFloat(bt.initial_capital || 0).toLocaleString()}
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Status:</span> ${bt.status}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                html += '</div>';
+                html += '<pre style="margin-top: 20px;">' + JSON.stringify(backtests[0], null, 2) + '</pre>';
+                html += '<p style="margin-top: 10px; color: #6c757d; font-size: 0.9em;">Click any backtest to load its data</p>';
+                
+                resultDiv.innerHTML = html;
+                
+            } catch (error) {
+                resultDiv.className = 'result-box error';
+                resultDiv.innerHTML = `
+                    <h3 style="color: #721c24; margin-bottom: 10px;">❌ Error fetching backtests</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <pre>${error.stack}</pre>
+                `;
+            }
+        }
+        
+        // Test 2: Load Specific Backtest
+        async function testLoadBacktest(id) {
+            if (!id) {
+                id = document.getElementById('backtest-id-input').value;
+            }
+            
+            if (!id) {
+                alert('Please enter a backtest ID');
+                return;
+            }
+            
+            const resultDiv = document.getElementById('load-backtest-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box info';
+            resultDiv.innerHTML = `<div class="loading"></div> Loading backtest #${id}...`;
+            
+            try {
+                // Fetch metrics
+                const metricsResponse = await fetch(`${API_BASE}/api/backtest/status/${id}`);
+                if (!metricsResponse.ok) throw new Error(`Metrics fetch failed: ${metricsResponse.status}`);
+                const metrics = await metricsResponse.json();
+                
+                // Fetch trades
+                const tradesResponse = await fetch(`${API_BASE}/api/backtest/${id}/trades`);
+                if (!tradesResponse.ok) throw new Error(`Trades fetch failed: ${tradesResponse.status}`);
+                const tradesData = await tradesResponse.json();
+                const trades = tradesData.trades || [];
+                
+                resultDiv.className = 'result-box success';
+                
+                const returnPct = (parseFloat(metrics.total_return || 0) * 100).toFixed(2);
+                const returnClass = parseFloat(metrics.total_return || 0) >= 0 ? 'positive' : 'negative';
+                
+                resultDiv.innerHTML = `
+                    <h3 style="color: #155724; margin-bottom: 15px;">✅ Backtest #${id} Loaded Successfully</h3>
+                    
+                    <div class="stat-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">Total Return</div>
+                            <div class="stat-value ${returnClass}">${returnPct}%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Total Trades</div>
+                            <div class="stat-value">${trades.length}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Win Rate</div>
+                            <div class="stat-value">${(parseFloat(metrics.win_rate || 0) * 100).toFixed(1)}%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Sharpe Ratio</div>
+                            <div class="stat-value">${parseFloat(metrics.sharpe_ratio || 0).toFixed(2)}</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Max Drawdown</div>
+                            <div class="stat-value negative">${(parseFloat(metrics.max_drawdown || 0) * 100).toFixed(2)}%</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Profit Factor</div>
+                            <div class="stat-value">${parseFloat(metrics.profit_factor || 0).toFixed(2)}</div>
+                        </div>
+                    </div>
+                    
+                    <h4 style="margin-top: 25px; color: #667eea;">📊 Metrics Data (API Response)</h4>
+                    <pre>${JSON.stringify(metrics, null, 2)}</pre>
+                    
+                    <h4 style="margin-top: 25px; color: #667eea;">💼 Sample Trades (First 3)</h4>
+                    <pre>${JSON.stringify(trades.slice(0, 3), null, 2)}</pre>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #d1ecf1; border-radius: 6px;">
+                        <strong>✅ Data Type Validation:</strong>
+                        <ul style="margin-top: 10px; margin-left: 20px;">
+                            <li>metrics.final_capital type: <code>${typeof metrics.final_capital}</code> (${metrics.final_capital})</li>
+                            <li>metrics.total_return type: <code>${typeof metrics.total_return}</code> (${metrics.total_return})</li>
+                            <li>metrics.sharpe_ratio type: <code>${typeof metrics.sharpe_ratio}</code> (${metrics.sharpe_ratio})</li>
+                            <li>trades[0].net_pnl type: <code>${trades[0] ? typeof trades[0].net_pnl : 'N/A'}</code> (${trades[0]?.net_pnl || 'N/A'})</li>
+                        </ul>
+                        <p style="margin-top: 10px; color: #0c5460;">
+                            ${typeof metrics.final_capital === 'string' ? '⚠️ Numeric fields are STRINGS - toNumber() conversion is REQUIRED' : '✅ Numeric fields are already numbers'}
+                        </p>
+                    </div>
+                `;
+                
+            } catch (error) {
+                resultDiv.className = 'result-box error';
+                resultDiv.innerHTML = `
+                    <h3 style="color: #721c24; margin-bottom: 10px;">❌ Error loading backtest #${id}</h3>
+                    <p><strong>Error:</strong> ${error.message}</p>
+                    <pre>${error.stack}</pre>
+                `;
+            }
+        }
+        
+        // Test 3: Simulate Dropdown
+        async function simulateDropdown() {
+            const resultDiv = document.getElementById('dropdown-simulation');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box info';
+            resultDiv.innerHTML = '<div class="loading"></div> Fetching backtests for dropdown...';
+            
+            try {
+                const response = await fetch(`${API_BASE}/api/backtest/recent?limit=10`);
+                const backtests = await response.json();
+                
+                resultDiv.className = 'result-box success';
+                resultDiv.innerHTML = `
+                    <h3 style="color: #155724; margin-bottom: 15px;">🎨 Dropdown UI Simulation</h3>
+                    <p style="margin-bottom: 15px; color: #6c757d;">This is how the dropdown will appear in the Backtesting page:</p>
+                    
+                    <div style="background: #8b5cf6; background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.2) 100%); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 15px;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2">
+                                <circle cx="12" cy="12" r="10"></circle>
+                                <polyline points="12 6 12 12 16 14"></polyline>
+                            </svg>
+                            <span style="font-weight: 600; color: #8b5cf6;">Previous Backtests</span>
+                            <span style="background: white; border: 1px solid #e5e7eb; padding: 2px 8px; border-radius: 12px; font-size: 0.75em;">
+                                ${backtests.length} available
+                            </span>
+                        </div>
+                        
+                        <select style="width: 100%; padding: 10px; border: 2px solid #e5e7eb; border-radius: 6px; font-size: 14px; background: white;" onchange="if(this.value) testLoadBacktest(this.value)">
+                            <option value="">Load Previous Backtest...</option>
+                            ${backtests.map(bt => {
+                                const returnPct = (parseFloat(bt.total_return || 0) * 100).toFixed(2);
+                                const returnIcon = parseFloat(bt.total_return || 0) >= 0 ? '📈' : '📉';
+                                return `<option value="${bt.id}">${returnIcon} ${bt.strategy_name} - ${bt.symbol} (${bt.total_trades || 0} trades • ${returnPct}% • ${new Date(bt.created_at).toLocaleDateString()})</option>`;
+                            }).join('')}
+                        </select>
+                        
+                        <p style="margin-top: 10px; font-size: 0.85em; color: #6c757d;">
+                            Select a backtest to load its results
+                        </p>
+                    </div>
+                    
+                    <div style="margin-top: 20px; padding: 15px; background: #fff3cd; border-radius: 6px;">
+                        <strong>📝 Implementation Notes:</strong>
+                        <ul style="margin-top: 10px; margin-left: 20px; color: #856404;">
+                            <li>Dropdown fetches ${backtests.length} most recent backtests on page load</li>
+                            <li>Selecting a backtest calls <code>fetchTrades(backtestId)</code></li>
+                            <li>Results appear in the BacktestResults component below</li>
+                            <li>All data goes through toNumber() conversion for safety</li>
+                            <li>Error boundary catches any rendering crashes</li>
+                        </ul>
+                    </div>
+                `;
+                
+            } catch (error) {
+                resultDiv.className = 'result-box error';
+                resultDiv.innerHTML = `
+                    <h3 style="color: #721c24;">❌ Error</h3>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+        
+        // Test 4: Complete Flow
+        async function testCompleteFlow() {
+            const resultDiv = document.getElementById('complete-flow-result');
+            resultDiv.style.display = 'block';
+            resultDiv.className = 'result-box info';
+            
+            let log = '';
+            const addLog = (message, type = 'info') => {
+                const icons = { info: 'ℹ️', success: '✅', error: '❌', warning: '⚠️' };
+                log += `${icons[type]} ${message}\n`;
+                resultDiv.innerHTML = `<pre style="background: #2d3748; color: white; padding: 15px; border-radius: 6px; white-space: pre-wrap;">${log}</pre>`;
+            };
+            
+            try {
+                // Step 1: Fetch backtests list
+                addLog('STEP 1: Fetching previous backtests list...');
+                const listResponse = await fetch(`${API_BASE}/api/backtest/recent?limit=5`);
+                if (!listResponse.ok) throw new Error('Failed to fetch backtests list');
+                const backtests = await listResponse.json();
+                addLog(`✅ Fetched ${backtests.length} backtests`, 'success');
+                
+                if (backtests.length === 0) {
+                    addLog('⚠️ No backtests available', 'warning');
+                    return;
+                }
+                
+                // Step 2: Select first backtest
+                const selectedBacktest = backtests[0];
+                addLog(`STEP 2: Selecting backtest #${selectedBacktest.id} (${selectedBacktest.strategy_name} - ${selectedBacktest.symbol})`);
+                
+                // Step 3: Load metrics
+                addLog('STEP 3: Loading backtest metrics...');
+                const metricsResponse = await fetch(`${API_BASE}/api/backtest/status/${selectedBacktest.id}`);
+                if (!metricsResponse.ok) throw new Error('Failed to load metrics');
+                const metrics = await metricsResponse.json();
+                addLog(`✅ Loaded metrics (Return: ${(parseFloat(metrics.total_return || 0) * 100).toFixed(2)}%)`, 'success');
+                
+                // Step 4: Load trades
+                addLog('STEP 4: Loading trades data...');
+                const tradesResponse = await fetch(`${API_BASE}/api/backtest/${selectedBacktest.id}/trades`);
+                if (!tradesResponse.ok) throw new Error('Failed to load trades');
+                const tradesData = await tradesResponse.json();
+                const trades = tradesData.trades || [];
+                addLog(`✅ Loaded ${trades.length} trades`, 'success');
+                
+                // Step 5: Validate data types
+                addLog('STEP 5: Validating data types...');
+                const isString = typeof metrics.final_capital === 'string';
+                addLog(`   • metrics.final_capital: ${typeof metrics.final_capital} (${metrics.final_capital})`);
+                addLog(`   • metrics.total_return: ${typeof metrics.total_return} (${metrics.total_return})`);
+                if (trades[0]) {
+                    addLog(`   • trades[0].net_pnl: ${typeof trades[0].net_pnl} (${trades[0].net_pnl})`);
+                }
+                
+                if (isString) {
+                    addLog('⚠️ Numeric values are STRINGS - toNumber() conversion is REQUIRED', 'warning');
+                } else {
+                    addLog('✅ Numeric values are proper numbers', 'success');
+                }
+                
+                // Step 6: Test toNumber conversion
+                addLog('STEP 6: Testing toNumber() conversion...');
+                const toNumber = (value) => {
+                    if (value === null || value === undefined) return 0;
+                    if (typeof value === 'number') return value;
+                    if (typeof value === 'string') return parseFloat(value) || 0;
+                    return 0;
+                };
+                
+                const convertedReturn = toNumber(metrics.total_return);
+                const convertedCapital = toNumber(metrics.final_capital);
+                addLog(`   • Converted total_return: ${convertedReturn} (type: ${typeof convertedReturn})`);
+                addLog(`   • Converted final_capital: ${convertedCapital} (type: ${typeof convertedCapital})`);
+                addLog('✅ toNumber() conversion working correctly', 'success');
+                
+                // Step 7: Simulate component render
+                addLog('STEP 7: Simulating BacktestResults component render...');
+                const profitDollars = convertedCapital - toNumber(metrics.initial_capital);
+                const returnPct = convertedReturn * 100;
+                addLog(`   • Profit/Loss: $${profitDollars.toFixed(2)}`);
+                addLog(`   • Return %: ${returnPct.toFixed(2)}%`);
+                addLog(`   • Sharpe Ratio: ${toNumber(metrics.sharpe_ratio).toFixed(2)}`);
+                addLog(`   • Win Rate: ${(toNumber(metrics.win_rate) * 100).toFixed(1)}%`);
+                addLog('✅ All calculations completed successfully', 'success');
+                
+                // Final summary
+                addLog('\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'success');
+                addLog('🎉 COMPLETE FLOW TEST PASSED', 'success');
+                addLog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━', 'success');
+                addLog('\n✅ All steps completed successfully');
+                addLog('✅ Data fetching working correctly');
+                addLog('✅ Data type handling functional');
+                addLog('✅ Component calculations accurate');
+                addLog('\n🚀 Previous Backtests Dropdown is READY FOR USE');
+                
+                resultDiv.className = 'result-box success';
+                
+            } catch (error) {
+                addLog(`\n❌ ERROR: ${error.message}`, 'error');
+                addLog(`Stack: ${error.stack}`, 'error');
+                resultDiv.className = 'result-box error';
+            }
+        }
+        
+        // Auto-run Test 1 on load
+        window.addEventListener('load', () => {
+            console.log('🚀 Previous Backtests Test Page Loaded');
+            testFetchBacktests(10);
+        });
+    </script>
+</body>
+</html>

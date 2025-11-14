@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Session Limit UI Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .session-limit { 
+            background: #fff3cd; 
+            border: 1px solid #ffeaa7; 
+            padding: 15px; 
+            border-radius: 5px; 
+            margin: 10px 0;
+        }
+        .test-button { 
+            background: #007bff; 
+            color: white; 
+            padding: 10px 20px; 
+            border: none; 
+            border-radius: 5px; 
+            cursor: pointer; 
+            margin: 5px;
+        }
+        .test-button:hover { background: #0056b3; }
+        .console { 
+            background: #f8f9fa; 
+            border: 1px solid #dee2e6; 
+            padding: 10px; 
+            margin: 10px 0; 
+            font-family: monospace; 
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Session Limit UI Test</h1>
+    <p>This page tests if the session limit functionality is working properly.</p>
+    
+    <button class="test-button" onclick="testDirectUI()">Test UI Display</button>
+    <button class="test-button" onclick="testSocketConnection()">Test Socket Connection</button>
+    <button class="test-button" onclick="testSessionLimitSocket()">Test Session Limit via Socket</button>
+    <button class="test-button" onclick="clearLog()">Clear Log</button>
+    
+    <div id="console-log" class="console">Waiting for tests...\n</div>
+    
+    <div id="session-limit-display" style="display: none;">
+        <div class="session-limit">
+            <h3>⚠️ Claude Session Limit Reached</h3>
+            <p>Session limit reached ∙ resets 7am</p>
+            <p><em>You can continue chatting after the reset time.</em></p>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script>
+        function log(message) {
+            const console = document.getElementById('console-log');
+            console.textContent += new Date().toLocaleTimeString() + ': ' + message + '\n';
+            console.scrollTop = console.scrollHeight;
+        }
+        
+        function clearLog() {
+            document.getElementById('console-log').textContent = 'Log cleared...\n';
+        }
+        
+        function testDirectUI() {
+            log('Testing direct UI display...');
+            const display = document.getElementById('session-limit-display');
+            display.style.display = display.style.display === 'none' ? 'block' : 'none';
+            log('Session limit display toggled: ' + (display.style.display === 'block' ? 'SHOWN' : 'HIDDEN'));
+        }
+        
+        let socket = null;
+        
+        function testSocketConnection() {
+            log('Testing Socket.IO connection to http://localhost:8081...');
+            
+            if (socket) {
+                socket.disconnect();
+            }
+            
+            try {
+                socket = io('http://localhost:8081');
+                
+                socket.on('connect', () => {
+                    log('✅ Socket connected successfully!');
+                    
+                    // Create terminal
+                    socket.emit('create-terminal', { terminalId: 'claude-persistent-main' });
+                });
+                
+                socket.on('terminal-created', (data) => {
+                    log('📡 Terminal created: ' + JSON.stringify(data));
+                });
+                
+                socket.on('claude-response', (data) => {
+                    log('📨 Claude response received!');
+                    log('   sessionLimit: ' + !!data.sessionLimit);
+                    log('   response: ' + (data.response || '').substring(0, 100));
+                    
+                    if (data.sessionLimit) {
+                        log('🚨 SESSION LIMIT DETECTED - showing UI warning');
+                        document.getElementById('session-limit-display').style.display = 'block';
+                    }
+                });
+                
+                socket.on('disconnect', () => {
+                    log('❌ Socket disconnected');
+                });
+                
+                socket.on('error', (error) => {
+                    log('❌ Socket error: ' + error.message);
+                });
+                
+            } catch (error) {
+                log('❌ Failed to create socket: ' + error.message);
+            }
+        }
+        
+        function testSessionLimitSocket() {
+            if (!socket || !socket.connected) {
+                log('❌ Socket not connected. Click "Test Socket Connection" first.');
+                return;
+            }
+            
+            log('🧪 Sending manual session limit message via socket...');
+            
+            // Simulate what the backend would send
+            const sessionLimitData = {
+                terminalId: 'claude-persistent-main',
+                response: 'Session limit reached ∙ resets 7am',
+                sessionLimit: true,
+                timestamp: Date.now()
+            };
+            
+            // Try to trigger via socket emit (this might not work as it's client->client)
+            socket.emit('claude-response', sessionLimitData);
+            log('📤 Sent session limit message. Check if UI updates...');
+            
+            // Also test by manually calling the handler
+            setTimeout(() => {
+                log('🎭 Manually triggering session limit display...');
+                document.getElementById('session-limit-display').style.display = 'block';
+            }, 2000);
+        }
+        
+        log('🚀 Session Limit Test Page loaded');
+        log('📋 Instructions:');
+        log('1. Click "Test UI Display" to toggle the session limit warning');
+        log('2. Click "Test Socket Connection" to connect to backend');
+        log('3. Click "Test Session Limit via Socket" to test the full flow');
+        log('4. Check the main app at http://localhost:8080 too');
+    </script>
+</body>
+</html>

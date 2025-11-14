@@ -246,13 +246,37 @@ CREATE INDEX IF NOT EXISTS idx_contract_bars_instance ON option_contract_bars(co
 CREATE INDEX IF NOT EXISTS idx_contract_bars_timestamp ON option_contract_bars(bar_timestamp);
 CREATE INDEX IF NOT EXISTS idx_contract_bars_instance_time ON option_contract_bars(contract_instance_id, bar_timestamp);
 
+-- ============================================================================
+-- DATA CACHE TABLES (for backtesting efficiency)
+-- ============================================================================
+
+-- Underlying bars cache - stores 1-min OHLCV data for fast backtesting
+CREATE TABLE IF NOT EXISTS underlying_bars (
+    id SERIAL PRIMARY KEY,
+    symbol VARCHAR(20) NOT NULL,
+    timestamp TIMESTAMP WITH TIME ZONE NOT NULL,
+    open DECIMAL(10, 4) NOT NULL,
+    high DECIMAL(10, 4) NOT NULL,
+    low DECIMAL(10, 4) NOT NULL,
+    close DECIMAL(10, 4) NOT NULL,
+    volume BIGINT NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+
+    -- Prevent duplicate bars
+    CONSTRAINT unique_underlying_bar UNIQUE (symbol, timestamp)
+);
+
+-- Performance indexes for underlying data queries
+CREATE INDEX IF NOT EXISTS idx_underlying_symbol_time ON underlying_bars(symbol, timestamp);
+CREATE INDEX IF NOT EXISTS idx_underlying_timestamp ON underlying_bars(timestamp);
+
 -- Insert sample API keys (you can update these later)
 DO $$
 DECLARE
     default_user_id UUID;
 BEGIN
     SELECT id INTO default_user_id FROM users WHERE email = 'trader@local.dev';
-    
+
     INSERT INTO api_keys (user_id, provider, api_key, api_secret, mode, is_connected)
     VALUES (default_user_id, 'alpaca', 'SAMPLE_KEY', 'SAMPLE_SECRET', 'paper', false)
     ON CONFLICT (user_id, provider) DO NOTHING;

@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Backtest Results Data Flow Test</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+        .section { margin: 20px 0; padding: 15px; border: 1px solid #444; border-radius: 5px; }
+        .success { color: #0f0; }
+        .error { color: #f00; }
+        .warning { color: #ff0; }
+        pre { background: #000; padding: 10px; overflow-x: auto; }
+        button { padding: 10px 20px; margin: 10px 5px; cursor: pointer; }
+        #console-log { background: #000; padding: 10px; height: 300px; overflow-y: auto; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Backtest Results Data Flow Diagnostic</h1>
+    
+    <div class="section">
+        <h2>Step 1: API Data Retrieval</h2>
+        <button onclick="testAPIEndpoints()">Test API Endpoints</button>
+        <div id="api-results"></div>
+    </div>
+
+    <div class="section">
+        <h2>Step 2: Frontend React App Test</h2>
+        <button onclick="testFrontendIframe()">Load Frontend in IFrame</button>
+        <button onclick="checkFrontendConsole()">Check Console Logs</button>
+        <div id="frontend-test"></div>
+    </div>
+
+    <div class="section">
+        <h2>Step 3: Direct Component Render Test</h2>
+        <button onclick="simulateBacktestResults()">Simulate BacktestResults Render</button>
+        <div id="component-test"></div>
+    </div>
+
+    <div class="section">
+        <h2>Console Output</h2>
+        <div id="console-log"></div>
+    </div>
+
+    <script>
+        const log = (msg, type = 'info') => {
+            const consoleDiv = document.getElementById('console-log');
+            const timestamp = new Date().toLocaleTimeString();
+            const color = type === 'error' ? 'red' : type === 'success' ? 'lime' : type === 'warning' ? 'yellow' : 'white';
+            consoleDiv.innerHTML += `<div style="color: ${color}">[${timestamp}] ${msg}</div>`;
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            console.log(msg);
+        };
+
+        async function testAPIEndpoints() {
+            log('🔄 Testing API endpoints...', 'info');
+            const resultsDiv = document.getElementById('api-results');
+            resultsDiv.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                // Test metrics endpoint
+                log('📡 Fetching backtest metrics...', 'info');
+                const metricsResponse = await fetch('http://localhost:3002/api/backtest/status/125');
+                const metrics = await metricsResponse.json();
+                log(`✅ Metrics received: ${JSON.stringify(metrics).substring(0, 100)}...`, 'success');
+                
+                // Test trades endpoint
+                log('📡 Fetching trades...', 'info');
+                const tradesResponse = await fetch('http://localhost:3002/api/backtest/125/trades');
+                const trades = await tradesResponse.json();
+                log(`✅ Trades received: ${trades.length} trades`, 'success');
+                
+                // Analyze data types
+                log('🔍 Analyzing data types...', 'info');
+                const firstTrade = trades[0];
+                const typeAnalysis = {
+                    'metrics.total_return': typeof metrics.total_return,
+                    'metrics.sharpe_ratio': typeof metrics.sharpe_ratio,
+                    'trade.net_pnl': typeof firstTrade.net_pnl,
+                    'trade.entry_price': typeof firstTrade.entry_price,
+                };
+                log(`📊 Type Analysis: ${JSON.stringify(typeAnalysis, null, 2)}`, 'warning');
+                
+                resultsDiv.innerHTML = `
+                    <div class="success">✅ API Test Results:</div>
+                    <pre>Metrics: ${JSON.stringify(metrics, null, 2)}</pre>
+                    <pre>First Trade: ${JSON.stringify(firstTrade, null, 2)}</pre>
+                    <div class="warning">⚠️ Data Types: ${JSON.stringify(typeAnalysis, null, 2)}</div>
+                `;
+                
+                // Store for next test
+                window.testData = { metrics, trades };
+                
+            } catch (error) {
+                log(`❌ API Error: ${error.message}`, 'error');
+                resultsDiv.innerHTML = `<div class="error">❌ Error: ${error.message}</div>`;
+            }
+        }
+
+        function testFrontendIframe() {
+            log('🖼️ Loading frontend in iframe...', 'info');
+            const testDiv = document.getElementById('frontend-test');
+            
+            // Create iframe
+            const iframe = document.createElement('iframe');
+            iframe.src = 'http://localhost:8080';
+            iframe.style.width = '100%';
+            iframe.style.height = '600px';
+            iframe.style.border = '2px solid #0f0';
+            
+            iframe.onload = () => {
+                log('✅ Frontend loaded in iframe', 'success');
+                
+                // Try to access iframe console
+                setTimeout(() => {
+                    try {
+                        const iframeWindow = iframe.contentWindow;
+                        log('🔍 Attempting to monitor iframe console...', 'info');
+                        
+                        // Override console methods
+                        const originalLog = iframeWindow.console.log;
+                        iframeWindow.console.log = function(...args) {
+                            log(`[IFRAME] ${args.join(' ')}`, 'info');
+                            originalLog.apply(iframeWindow.console, args);
+                        };
+                        
+                        const originalError = iframeWindow.console.error;
+                        iframeWindow.console.error = function(...args) {
+                            log(`[IFRAME ERROR] ${args.join(' ')}`, 'error');
+                            originalError.apply(iframeWindow.console, args);
+                        };
+                        
+                    } catch (e) {
+                        log(`⚠️ Cannot access iframe console (CORS): ${e.message}`, 'warning');
+                    }
+                }, 1000);
+            };
+            
+            testDiv.innerHTML = '';
+            testDiv.appendChild(iframe);
+        }
+
+        function checkFrontendConsole() {
+            log('🔍 Opening browser DevTools to check frontend console...', 'info');
+            log('⚠️ Please open DevTools (F12) and navigate to Console tab', 'warning');
+            log('Look for errors starting with [BacktestResults] or React errors', 'warning');
+        }
+
+        function simulateBacktestResults() {
+            log('🎭 Simulating BacktestResults component render...', 'info');
+            const testDiv = document.getElementById('component-test');
+            
+            if (!window.testData) {
+                testDiv.innerHTML = '<div class="error">❌ Please run "Test API Endpoints" first!</div>';
+                return;
+            }
+            
+            const { metrics, trades } = window.testData;
+            
+            log('🧪 Testing data transformations...', 'info');
+            
+            // Simulate toNumber function
+            const toNumber = (value) => {
+                if (value === undefined || value === null) return 0;
+                return typeof value === 'string' ? parseFloat(value) : value;
+            };
+            
+            try {
+                // Test critical calculations
+                log('📊 Testing profit calculation...', 'info');
+                const profitDollars = toNumber(metrics.final_capital) - toNumber(metrics.initial_capital);
+                log(`💰 Profit: $${profitDollars.toFixed(2)}`, 'success');
+                
+                log('📈 Testing equity curve calculation...', 'info');
+                const equityCurve = trades.reduce((acc, trade, index) => {
+                    const prevEquity = index === 0 ? toNumber(metrics.initial_capital) : acc[index - 1].equity;
+                    acc.push({
+                        trade: index + 1,
+                        equity: prevEquity + toNumber(trade.net_pnl),
+                        pnl: toNumber(trade.net_pnl),
+                    });
+                    return acc;
+                }, []);
+                log(`✅ Equity curve: ${equityCurve.length} points`, 'success');
+                
+                log('📊 Testing summary metrics...', 'info');
+                const totalReturn = (toNumber(metrics.total_return) * 100).toFixed(2);
+                const sharpeRatio = toNumber(metrics.sharpe_ratio).toFixed(3);
+                const winRate = (toNumber(metrics.win_rate) * 100).toFixed(1);
+                const profitFactor = toNumber(metrics.profit_factor).toFixed(2);
+                
+                log(`✅ Total Return: ${totalReturn}%`, 'success');
+                log(`✅ Sharpe Ratio: ${sharpeRatio}`, 'success');
+                log(`✅ Win Rate: ${winRate}%`, 'success');
+                log(`✅ Profit Factor: ${profitFactor}`, 'success');
+                
+                // Simulate component render
+                testDiv.innerHTML = `
+                    <div class="success">✅ Component Simulation Successful!</div>
+                    <h3>Rendered Data Preview:</h3>
+                    <div style="background: #222; padding: 15px; border-radius: 5px;">
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 20px;">
+                            <div style="background: #333; padding: 10px; border-radius: 5px;">
+                                <div style="color: #888; font-size: 12px;">Total Return</div>
+                                <div style="color: ${profitDollars >= 0 ? '#0f0' : '#f00'}; font-size: 24px; font-weight: bold;">
+                                    ${totalReturn}%
+                                </div>
+                                <div style="color: #888; font-size: 10px;">$${profitDollars.toFixed(2)}</div>
+                            </div>
+                            <div style="background: #333; padding: 10px; border-radius: 5px;">
+                                <div style="color: #888; font-size: 12px;">Sharpe Ratio</div>
+                                <div style="font-size: 24px; font-weight: bold;">${sharpeRatio}</div>
+                            </div>
+                            <div style="background: #333; padding: 10px; border-radius: 5px;">
+                                <div style="color: #888; font-size: 12px;">Win Rate</div>
+                                <div style="font-size: 24px; font-weight: bold;">${winRate}%</div>
+                                <div style="color: #888; font-size: 10px;">${metrics.winning_trades}W / ${metrics.losing_trades}L</div>
+                            </div>
+                            <div style="background: #333; padding: 10px; border-radius: 5px;">
+                                <div style="color: #888; font-size: 12px;">Profit Factor</div>
+                                <div style="font-size: 24px; font-weight: bold;">${profitFactor}</div>
+                            </div>
+                        </div>
+                        <div style="background: #333; padding: 10px; border-radius: 5px; margin-top: 10px;">
+                            <div style="font-weight: bold; margin-bottom: 10px;">Trade History (${trades.length} trades)</div>
+                            <div style="max-height: 200px; overflow-y: auto;">
+                                ${trades.slice(0, 5).map((trade, i) => `
+                                    <div style="padding: 5px; background: ${toNumber(trade.net_pnl) > 0 ? 'rgba(0,255,0,0.1)' : 'rgba(255,0,0,0.1)'}; margin: 2px 0;">
+                                        ${i + 1}. ${trade.contract_symbol} | Entry: $${toNumber(trade.entry_price).toFixed(2)} | Exit: $${toNumber(trade.exit_price).toFixed(2)} | P&L: $${toNumber(trade.net_pnl).toFixed(2)}
+                                    </div>
+                                `).join('')}
+                                ${trades.length > 5 ? `<div style="padding: 5px; color: #888;">... and ${trades.length - 5} more trades</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                    <div class="success" style="margin-top: 20px;">
+                        ✅ All calculations completed without errors!<br>
+                        ✅ Component should render correctly in React app
+                    </div>
+                `;
+                
+                log('✅ Component simulation completed successfully!', 'success');
+                
+            } catch (error) {
+                log(`❌ Simulation Error: ${error.message}`, 'error');
+                log(`Stack: ${error.stack}`, 'error');
+                testDiv.innerHTML = `<div class="error">❌ Error: ${error.message}<br>${error.stack}</div>`;
+            }
+        }
+
+        // Auto-run on load
+        window.onload = () => {
+            log('🚀 Diagnostic page loaded', 'success');
+            log('Click "Test API Endpoints" to begin comprehensive testing', 'info');
+        };
+    </script>
+</body>
+</html>

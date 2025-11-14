@@ -1,0 +1,39 @@
+{
+  "timestamp": "2025-11-08T03:33:51.978Z",
+  "config": {
+    "symbol": "SPY",
+    "initialCapital": 100000,
+    "maxIterations": 50,
+    "fullStartDate": "2025-01-27",
+    "fullEndDate": "2025-01-31",
+    "trainStart": "2025-01-27",
+    "trainEnd": "2025-01-30",
+    "validStart": "2025-01-31",
+    "validEnd": "2025-01-31"
+  },
+  "bestScore": -999,
+  "bestParams": {
+    "priceVwapThreshold": 0.001,
+    "profitTarget": 0.15,
+    "stopLoss": 0.15,
+    "maxHoldingPeriod": 30,
+    "maxPositions": 2,
+    "enableThetaAdjustment": true,
+    "minVwapDistance": 0.0005,
+    "slopeThreshold": 0.0001,
+    "thetaDecayThreshold": 0.1,
+    "finalHourMultiplier": 2,
+    "capitalPerPosition": 0.25,
+    "minVolume": 100,
+    "maxSpreadPct": 5,
+    "minDelta": 0.2,
+    "maxDelta": 0.45,
+    "dailyLossLimit": 0.03,
+    "dailyProfitTarget": 0.06,
+    "avoidOpenMinutes": 15,
+    "avoidCloseMinutes": 30,
+    "enablePortfolioLimits": true,
+    "enableTimeFilter": true
+  },
+  "durationMinutes": 0.00415
+}

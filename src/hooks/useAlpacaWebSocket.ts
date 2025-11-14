@@ -29,13 +29,15 @@ export interface TradeData {
 }
 
 export interface UseAlpacaWebSocketProps {
-  symbol?: string;
+  symbols?: string[];
   onTradeUpdate?: (trade: TradeData) => void;
   onError?: (error: Error) => void;
   onConnect?: () => void;
   onDisconnect?: () => void;
   autoReconnect?: boolean;
 }
+
+export function useAlpacaWebSocket({ symbols = [], onTradeUpdate, onError, onConnect, onDisconnect, autoReconnect = true }: UseAlpacaWebSocketProps) {
   const [quotes, setQuotes] = useState<Map<string, Quote>>(new Map());
   const [trades, setTrades] = useState<Trade[]>([]);
   const [connected, setConnected] = useState(false);
@@ -56,6 +58,7 @@ export interface UseAlpacaWebSocketProps {
         console.log('[WS CLIENT] Starting WebSocket connection process...');
         console.log('[WS CLIENT] Reconnect attempt:', reconnectAttempts);
         console.log('[WS CLIENT] Connecting to Docker WebSocket proxy...');
+        const DOCKER_WS_URL = ENDPOINTS.WEBSOCKET || 'ws://localhost:8082';
         console.log('[WS CLIENT] WebSocket URL:', DOCKER_WS_URL);
         console.log('[WS CLIENT] Initiating connection...');
 
@@ -309,4 +312,4 @@ export interface UseAlpacaWebSocketProps {
     unsubscribe,
     forceReconnect,
   };
-};
+}

@@ -1,0 +1,154 @@
+{
+  "symbol": "IWM",
+  "analysisDate": "2025-11-09T15:40:08.902Z",
+  "period": {
+    "startDate": "2025-11-04",
+    "endDate": "2025-11-09"
+  },
+  "stockAnalysis": {
+    "totalDays": 4,
+    "avgDailyRange": 1.8308203401566585,
+    "avgDailyVolume": 1078353.25,
+    "volatilityProfile": "Low",
+    "trendAnalysis": {},
+    "supportResistance": {},
+    "intradayPatterns": {},
+    "riskMetrics": {
+      "maxDailyMove": 2.439535566081231,
+      "avgTrue": 2.5,
+      "volatilityRegimes": {
+        "low": 30,
+        "medium": 50,
+        "high": 20
+      }
+    }
+  },
+  "optionsAnalysis": {
+    "avgBidAskSpread": null,
+    "liquidityProfile": {
+      "avgVolume": null,
+      "avgOpenInterest": null,
+      "liquidHours": null
+    },
+    "greeksAnalysis": {
+      "deltaRanges": {
+        "calls": {
+          "atm": null,
+          "itm": null,
+          "otm": null
+        },
+        "puts": {
+          "atm": null,
+          "itm": null,
+          "otm": null
+        }
+      },
+      "gammaSpikes": null,
+      "thetaDecay": null,
+      "vegaSensitivity": null,
+      "ivRanges": null
+    },
+    "pricingBehavior": {
+      "avgCallPremium": null,
+      "avgPutPremium": null,
+      "atmPricingEfficiency": null,
+      "spreadCosts": null
+    },
+    "optimalStrikes": {
+      "callDeltas": null,
+      "putDeltas": null,
+      "recommendedRange": null
+    }
+  },
+  "technicalAnalysis": {
+    "RSI": {
+      "avgRSI": 50.73652508425491,
+      "oversoldFrequency": 10.41796631316282,
+      "overboughtFrequency": 12.975670617592014,
+      "neutralZoneTime": 46.41297567061759,
+      "distribution": {
+        "percentiles": {
+          "p10": 29.50819672130811,
+          "p20": 37.30964467005057,
+          "p30": 42.12218649517659,
+          "p50": 50,
+          "p70": 58.82352941176501,
+          "p80": 64.78873239436612,
+          "p90": 73.05389221556888
+        }
+      },
+      "recommendedLevels": {
+        "oversold": 37.30964467005057,
+        "overbought": 64.78873239436612,
+        "extreme_oversold": 29.50819672130811,
+        "extreme_overbought": 73.05389221556888
+      }
+    },
+    "VWAP": {
+      "avgDeviation": 0.14006490493956059,
+      "maxDeviation": 1.173964954893396,
+      "aboveVWAP": 52.69016697588126,
+      "significantDeviations": {
+        "onePercent": 0.4329004329004329,
+        "twoPercent": 0,
+        "threePercent": 0
+      },
+      "recommendedThreshold": 0.2100973574093409
+    },
+    "MovingAverages": {
+      "ema9": {},
+      "ema21": {},
+      "sma20": {}
+    },
+    "Momentum": {
+      "macd": {},
+      "momentum": {}
+    },
+    "Volatility": {
+      "atr": {},
+      "bollingerBands": {}
+    },
+    "effectiveness": {
+      "overall": 0.75,
+      "individual": {}
+    }
+  },
+  "recommendations": {
+    "strategyType": "moderate",
+    "confidence": 0.75,
+    "parameters": {
+      "RSI": {
+        "period": 14,
+        "oversold": 37.30964467005057,
+        "overbought": 64.78873239436612,
+        "extreme_oversold": 29.50819672130811,
+        "extreme_overbought": 73.05389221556888
+      },
+      "VWAP": {
+        "period": 30,
+        "threshold": 0.002100973574093409,
+        "significantMove": 0.0028012980987912116
+      },
+      "riskManagement": {
+        "stopLoss": 0.2,
+        "profitTarget": 0.15,
+        "maxHold": 60
+      },
+      "deltaTargets": {
+        "calls": 0.5,
+        "puts": -0.5
+      },
+      "timeframes": {
+        "short": "1min",
+        "medium": "3min",
+        "long": "10min"
+      }
+    },
+    "warnings": [],
+    "expectedPerformance": {
+      "winRate": 65,
+      "sharpe": 1.8,
+      "riskLevel": "Medium"
+    }
+  }
+}

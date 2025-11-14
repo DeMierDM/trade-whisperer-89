@@ -1,0 +1,555 @@
+/**
+ * Terminal Bridge Server
+ * Bridges WebSocket communication between frontend and Claude terminal
+ */
+
+const express = require('express');
+const http = require('http');
+const socketIo = require('socket.io');
+const pty = require('node-pty');
+const cors = require('cors');
+
+const app = express();
+const server = http.createServer(app);
+const io = socketIo(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+app.use(cors());
+app.use(express.json());
+
+// Store active terminal sessions
+const terminals = new Map();
+
+// Persistent Claude terminal configuration
+const PERSISTENT_TERMINAL_ID = 'claude-persistent-main';
+let persistentClaudeTerminal = null;
+
+console.log('🚀 Claude AI Terminal Bridge Server starting...');
+
+// Create persistent Claude terminal on startup
+function createPersistentClaudeTerminal() {
+  console.log('🔄 Creating persistent Claude terminal session...');
+  
+  const terminal = pty.spawn('zsh', [], {
+    name: 'xterm-color',
+    cols: 120,
+    rows: 30,
+    cwd: '/workspace',
+    env: {
+      ...process.env,
+      SHELL: '/bin/zsh',
+      PATH: '/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin'
+    }
+  });
+
+  const session = {
+    terminal,
+    claudeStarted: false,
+    claudeReady: false,
+    waitingForResponse: false,
+    responseBuffer: '',
+    cleanResponseLines: [],
+    responseStartTime: null,
+    socket: null, // Will be set when client connects
+    persistent: true,
+    createdAt: Date.now()
+  };
+
+  terminals.set(PERSISTENT_TERMINAL_ID, session);
+  persistentClaudeTerminal = session;
+  
+  console.log(`✅ Persistent Claude terminal created: ${PERSISTENT_TERMINAL_ID}`);
+  return session;
+}
+
+// Initialize persistent terminal on startup
+createPersistentClaudeTerminal();
+
+// Handle WebSocket connections
+io.on('connection', (socket) => {
+  console.log(`📡 New client connected: ${socket.id}`);
+
+  // Use persistent Claude terminal session
+  socket.on('create-terminal', (data) => {
+    const { sessionId } = data || {};
+    const terminalId = sessionId || PERSISTENT_TERMINAL_ID;
+
+    console.log(`🔧 Connecting to persistent Claude terminal: ${terminalId}`);
+
+    // Check if persistent terminal exists, create if needed
+    if (!persistentClaudeTerminal || persistentClaudeTerminal.terminal.killed) {
+      console.log('🔄 Persistent terminal not available, creating new one...');
+      createPersistentClaudeTerminal();
+    }
+
+    // Use the persistent terminal session
+    const session = persistentClaudeTerminal;
+    
+    // Add this socket to the persistent terminal's connected clients
+    if (!session.connectedSockets) {
+      session.connectedSockets = new Set();
+    }
+    session.connectedSockets.add(socket);
+    
+    // Update primary socket reference for this session (for backward compatibility)
+    session.socket = socket;
+    
+    console.log(`✅ Connected to persistent Claude terminal: ${PERSISTENT_TERMINAL_ID} (${session.connectedSockets.size} clients)`);
+    
+    // Emit terminal creation response
+    socket.emit('terminal-created', { terminalId: PERSISTENT_TERMINAL_ID });
+
+    // The data handler should already be set up when the persistent terminal was created
+    // If not set up yet, set it up now (this happens on first connection)
+    if (!session.dataHandlerAttached) {
+      const terminal = session.terminal;
+      
+      terminal.on('data', (data) => {
+        const output = data.toString();
+        const session = terminals.get(PERSISTENT_TERMINAL_ID);
+      
+      console.log(`📡 Raw terminal output: ${output.substring(0, 200)}`);
+      
+      // Detect actual Claude responses in print mode
+      if (session && session.waitingForResponse) {
+        // Initialize response buffer if not exists
+        if (!session.responseBuffer) session.responseBuffer = '';
+        if (!session.cleanResponseLines) session.cleanResponseLines = [];
+        
+        console.log(`📡 Raw output: ${output.substring(0, 100)}...`);
+        
+        // Comprehensive filtering of unwanted output - BLOCK ALL API DEBUG LOGS
+        const isNoise = (
+          // Command echo and fragments
+          output.includes('claude -p "') ||
+          /^clau$|^de -p|^Wha$|^t i$|^s 5 \+/.test(output.trim()) ||
+          
+          // STRICT API DEBUG LOG BLOCKING
+          /\[log_[a-f0-9]+[\],]/.test(output) ||  // [log_xxxxx] patterns
+          output.includes('sending request {') ||
+          output.includes('request-id:') ||
+          output.includes('succeeded with status') ||
+          output.includes('response start {') ||
+          output.includes('response parsed {') ||
+          output.includes('HeadersList {') ||
+          output.includes('AbortController {') ||
+          output.includes('ReadableStream {') ||
+          
+          // HTTP/API headers and metadata
+          output.includes('anthropic-') ||
+          output.includes('x-stainless-') ||
+          output.includes('x-envoy-') ||
+          output.includes('cf-ray') ||
+          output.includes('cf-cache-status') ||
+          output.includes('content-type') ||
+          output.includes('transfer-encoding') ||
+          output.includes('strict-transport-security') ||
+          output.includes('cache-control') ||
+          
+          // API request/response objects
+          output.includes('method: \'post\'') ||
+          output.includes('url: \'https://api.anthropic.com') ||
+          output.includes('options: {') ||
+          output.includes('headers: {') ||
+          output.includes('body: {') ||
+          output.includes('durationMs:') ||
+          output.includes('timeout: ') ||
+          output.includes('stream: ') ||
+          
+          // Symbol and Map objects
+          output.includes('[Symbol(') ||
+          output.includes('Map(') ||
+          output.includes('cookies: null') ||
+          output.includes('{') && output.includes('name:') && output.includes('value:') ||
+          
+          // Stream and controller objects
+          output.includes('supportsBYOB') ||
+          output.includes('state: \'readable\'') ||
+          output.includes('locked: f') ||
+          output.includes('iterator: [AsyncGeneratorFunction') ||
+          output.includes('controller: AbortController') ||
+          output.includes('signal: AbortSignal') ||
+          
+          // Terminal escape sequences
+          /\[\?[0-9]+[hl]/.test(output) ||
+          output.includes(']2;') ||
+          output.includes(']1;') ||
+          
+          // Shell prompt indicators  
+          output.includes('➜') ||
+          output.includes('git:(') ||
+          output.includes('/workspace') ||
+          output.includes('✗') ||
+          output.includes('workspace git:(clean-master)') ||
+          /^#\s*$/.test(output.trim()) ||
+          
+          // Just whitespace or control chars
+          /^[\s\r\n]*$/.test(output) ||
+          
+          // Short meaningless fragments
+          output.trim().length < 4 && /^[a-z\-\s\{\}]*$/.test(output.trim()) ||
+          
+          // Any line that looks like debug/log output
+          /^(response|status:|body:|headers:|durationMs|timeout|stream|method|url|options)/.test(output.trim())
+        );
+        
+        if (!isNoise) {
+          // Clean the output further
+          let cleanOutput = output
+            .replace(/\x1b\[[0-9;]*[mGKHJABCDEFG]/g, '') // Remove ANSI codes
+            .replace(/\x1b\[[\d;]*[A-Za-z]/g, '') // Remove escape sequences
+            .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '') // Remove control chars
+            .trim();
+          
+          // Accept lines that are Claude responses, reject API debug content
+          const isLikelyClaudeResponse = (line) => {
+            // HARD REJECT: Definitely API/debug content
+            if (line.includes('log_') || line.includes('request-id') || line.includes('succeeded with status')) return false;
+            if (line.includes('anthropic.com') || line.includes('HeadersList') || line.includes('AbortController')) return false;
+            if (line.includes('response start') || line.includes('response parsed') || line.includes('sending request')) return false;
+            if (line.includes('Symbol(') || line.includes('[Symbol(') || line.includes('Map(')) return false;
+            if (line.includes('cookies: null') || line.includes('durationMs:')) return false;
+            if (/^(method|url|options|headers|body|status|timeout|stream):\s*/.test(line)) return false;
+            
+            // ACCEPT: Clear Claude conversational content
+            // Short responses like "Yes" or "Hi"
+            if (/^(Yes,?|No,?|Hi!?|Hello!?|Sure!?)(\s|$)/.test(line)) return true;
+            
+            // Mathematical expressions 
+            if (/^\d+\s*[\+\-\*/]\s*\d+\s*=\s*\d+$/.test(line)) return true;
+            
+            // Claude conversational patterns
+            if (/^(I'm ready|I can help|I understand|I see|Looking at|Based on|I('ll|'m| can| will| would| should))/.test(line)) return true;
+            
+            // Questions from Claude
+            if (/^(What|How|Why|Where|When|Would|Could|Should|Do|Does|Is|Are)/.test(line)) return true;
+            
+            // Natural sentences (avoid lines with technical colons/numbers)
+            if (line.length > 10 && /[.!?]$/.test(line) && !/:/.test(line) && !/\d{4,}/.test(line)) return true;
+            
+            // Lines with help/ready indicators
+            if (line.includes('ready') || line.includes('help') && line.length > 5) return true;
+            
+            // Other natural sentence patterns
+            if (/^(Here|That|The|This|A|An|Some|Many|Several|Of course)/.test(line) && line.length > 10) return true;
+            
+            return false;
+          };
+          
+          if (cleanOutput && cleanOutput.length > 4 && isLikelyClaudeResponse(cleanOutput)) {
+            session.cleanResponseLines.push(cleanOutput);
+            console.log(`📝 Claude response line: "${cleanOutput}"`);
+            
+            // Check if we have a complete Claude response
+            const fullResponse = session.cleanResponseLines.join('\n');
+            
+            // Better detection for complete responses
+            const hasCompleteResponse = (
+              // Mathematical responses (complete with equals)
+              /\d+\s*[\+\-\*/]\s*\d+\s*=\s*\d+/.test(fullResponse) ||
+              // Substantial conversational responses
+              (fullResponse.length > 30 && /[.!?]$/.test(fullResponse.trim())) ||
+              // Multi-line responses with substance
+              (session.cleanResponseLines.length >= 2 && fullResponse.length > 50) ||
+              // Token usage messages (complete Claude system responses)
+              (fullResponse.includes('Token Status:') && fullResponse.includes('How can I help'))
+            );
+            
+            if (hasCompleteResponse) {
+              console.log(`🎯 DETECTED complete Claude response (${session.cleanResponseLines.length} lines)`);
+              console.log(`📝 Final response: ${fullResponse}`);
+              
+              // Send the clean Claude response to frontend
+              socket.emit('claude-response', { 
+                terminalId, 
+                response: fullResponse,
+                timestamp: Date.now()
+              });
+              
+              session.waitingForResponse = false;
+              session.responseBuffer = '';
+              session.cleanResponseLines = [];
+              
+              console.log(`✅ Clean Claude response sent to frontend`);
+            }
+          }
+        }
+        
+        const timeWaiting = Date.now() - session.responseStartTime;
+        if (timeWaiting > 15000) { // 15 seconds timeout (reduced from 30)
+          console.log(`⏰ Response timeout for terminal ${terminalId} after ${timeWaiting}ms`);
+          if (session.cleanResponseLines && session.cleanResponseLines.length > 0) {
+            const partialResponse = session.cleanResponseLines.join('\n');
+            console.log(`📝 Sending partial response: ${partialResponse}`);
+            socket.emit('claude-response', { 
+              terminalId, 
+              response: partialResponse,
+              timestamp: Date.now()
+            });
+          }
+          session.waitingForResponse = false;
+          session.responseBuffer = '';
+          session.cleanResponseLines = [];
+        }
+      }
+      
+      // Detect when Claude is ready for input
+      if (session && session.claudeStarted && !session.claudeReady) {
+        // Check multiple indicators that Claude is ready
+        const claudeReadyIndicators = [
+          output.includes('Claude Code') && output.includes('Sonnet'),
+          output.includes('/workspace'),
+          output.includes('────────────────'), // Claude's separator line
+          output.includes('> Try "'),  // Claude's suggestion prompt
+          output.includes('ctrl-g to edit') // Claude's help text
+        ];
+        
+        if (claudeReadyIndicators.some(indicator => indicator)) {
+          console.log(`🤖 Claude is ready for terminal ${terminalId}`);
+          session.claudeReady = true;
+          
+          // Check for usage limit warnings
+          if (output.includes('Approaching weekly limit') || output.includes('weekly limit')) {
+            console.log(`⚠️  Claude usage limit warning detected`);
+            socket.emit('claude-usage-warning', {
+              terminalId,
+              message: 'Approaching weekly limit',
+              type: 'weekly_limit'
+            });
+          }
+          
+          // Send any pending input after a short delay
+          if (session.pendingInput) {
+            console.log(`📤 Sending pending input: ${session.pendingInput.replace('\n', '\\n')}`);
+            setTimeout(() => {
+              terminal.write(session.pendingInput);
+              session.pendingInput = null;
+            }, 2000); // Longer delay to ensure Claude is fully ready
+          }
+        }
+      }
+      
+      // Always check for usage limit messages in any output
+      if (output.includes('Approaching weekly limit') || output.includes('weekly limit') || 
+          output.includes('usage limit') || output.includes('rate limit')) {
+        console.log(`📊 Usage limit detected in output: ${output}`);
+        socket.emit('claude-usage-status', {
+          terminalId,
+          status: 'warning',
+          message: output.trim(),
+          timestamp: Date.now()
+        });
+      }
+      
+      socket.emit('terminal-output', {
+        terminalId,
+        data: output
+      });
+    });
+
+    // Handle terminal exit
+    terminal.on('exit', (code, signal) => {
+      console.log(`🔚 Terminal ${terminalId} exited with code: ${code}, signal: ${signal}`);
+      terminals.delete(terminalId);
+      socket.emit('terminal-exit', { terminalId, code, signal });
+    });
+
+    // Send terminal ID back to client
+    socket.emit('terminal-created', { terminalId });
+
+    // Don't start Claude immediately, wait for first user input
+    setTimeout(() => {
+      terminal.write('clear\n');
+    }, 500);
+  });
+
+  // Handle input from frontend
+  socket.on('terminal-input', (data) => {
+    console.log(`🎯 TERMINAL-INPUT event received:`, JSON.stringify(data));
+    console.log(`📊 Current active terminals: ${terminals.size}`);
+    
+    const { terminalId, input } = data;
+    const terminalSession = terminals.get(terminalId);
+
+    if (terminalSession) {
+      // For persistent terminal, update socket reference if needed
+      if (terminalId === PERSISTENT_TERMINAL_ID && (!terminalSession.socket || terminalSession.socket.disconnected)) {
+        terminalSession.socket = socket;
+        console.log(`🔌 Reconnected socket to persistent terminal: ${terminalId}`);
+      }
+      
+      console.log(`⌨️  Terminal ${terminalId} input: ${input.replace(/\n/g, '\\n')}`);
+      console.log(`🔍 Terminal session found: ${JSON.stringify({
+        claudeStarted: terminalSession.claudeStarted,
+        claudeReady: terminalSession.claudeReady,
+        socketId: terminalSession.socket ? terminalSession.socket.id : 'no socket',
+        persistent: terminalSession.persistent || false
+      })}`);
+      
+      // Always use Claude in print mode for reliable responses
+      const userMessage = input.replace(/"/g, '\\"').replace(/\n/g, '');
+      const command = `claude -p "${userMessage}"`;
+      console.log(`🤖 Executing Claude command: ${command}`);
+      console.log(`📤 User message: ${userMessage}`);
+      
+      // Mark that we're waiting for a response
+      terminalSession.waitingForResponse = true;
+      terminalSession.responseStartTime = Date.now();
+      terminalSession.responseBuffer = ''; // Store complete response
+      console.log(`⏳ Marked terminal as waiting for response`);
+      
+      // Send acknowledgment that we're processing
+      socket.emit('claude-processing', { terminalId, status: 'waiting' });
+      
+      terminalSession.terminal.write(command + '\n');
+    } else {
+      console.error(`❌ Terminal ${terminalId} not found`);
+      console.log(`📊 Available terminals: ${Array.from(terminals.keys())}`);
+      socket.emit('error', { message: `Terminal ${terminalId} not found` });
+    }
+  });
+
+    // Handle terminal resize
+  socket.on('terminal-resize', (data) => {
+    const { terminalId, cols, rows } = data;
+    const terminalSession = terminals.get(terminalId);
+    
+    if (terminalSession) {
+      // For persistent terminal, update socket reference if needed
+      if (terminalId === PERSISTENT_TERMINAL_ID && (!terminalSession.socket || terminalSession.socket.disconnected)) {
+        terminalSession.socket = socket;
+      }
+      
+      console.log(`📐 Terminal ${terminalId} resize: ${cols}x${rows}`);
+      terminalSession.terminal.resize(cols, rows);
+    }
+  });
+
+  // Handle Claude-specific commands
+  socket.on('claude-command', (data) => {
+    const { terminalId, command, context } = data;
+    const terminalSession = terminals.get(terminalId);
+
+    if (terminalSession) {
+      // For persistent terminal, update socket reference if needed
+      if (terminalId === PERSISTENT_TERMINAL_ID && (!terminalSession.socket || terminalSession.socket.disconnected)) {
+        terminalSession.socket = socket;
+        console.log(`🔌 Reconnected socket to persistent terminal for command: ${terminalId}`);
+      }
+      
+      // Format Claude command with context
+      let claudeCmd = `claude`;
+      
+      if (context) {
+        claudeCmd += ` "${command}"`;
+      } else {
+        claudeCmd = command;
+      }
+
+      console.log(`🤖 Executing Claude command: ${claudeCmd}`);
+      terminalSession.terminal.stdin.write(`${claudeCmd}\n`);
+    }
+  });
+
+  // Handle disconnect
+  socket.on('disconnect', () => {
+    console.log(`📡 Client disconnected: ${socket.id}`);
+    
+    // Clean up terminals for this socket, but preserve persistent terminal
+    for (const [terminalId, session] of terminals.entries()) {
+      if (session.socket && session.socket.id === socket.id) {
+        
+        // NEVER cleanup the persistent Claude terminal
+        if (terminalId === PERSISTENT_TERMINAL_ID || session.persistent) {
+          console.log(`🔒 Preserving persistent Claude terminal: ${terminalId} (client disconnected)`);
+          session.socket = null; // Clear socket reference but keep terminal alive
+          continue;
+        }
+        
+        // For non-persistent terminals, proceed with cleanup
+        if (session.waitingForResponse) {
+          console.log(`⏳ Delaying cleanup for terminal ${terminalId} - waiting for Claude response`);
+          
+          setTimeout(() => {
+            if (terminals.has(terminalId)) {
+              console.log(`🧹 Delayed cleanup for terminal: ${terminalId}`);
+              const delayedSession = terminals.get(terminalId);
+              if (delayedSession && !delayedSession.persistent) {
+                delayedSession.terminal.kill('SIGTERM');
+                terminals.delete(terminalId);
+              }
+            }
+          }, 20000);
+        } else {
+          console.log(`🧹 Cleaning up terminal: ${terminalId}`);
+          session.terminal.kill('SIGTERM');
+          terminals.delete(terminalId);
+        }
+      }
+    }
+  });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    activeTerminals: terminals.size,
+    uptime: process.uptime()
+  });
+});
+
+// Get active terminals
+app.get('/terminals', (req, res) => {
+  const terminalList = Array.from(terminals.entries()).map(([id, session]) => ({
+    id,
+    created: session.created,
+    alive: !session.terminal.killed
+  }));
+
+  res.json({ terminals: terminalList });
+});
+
+// Initialize persistent Claude terminal on startup
+console.log('🚀 Creating persistent Claude terminal...');
+persistentClaudeTerminal = createPersistentClaudeTerminal();
+
+// Start server
+const PORT = process.env.PORT || 8080;
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`✅ Claude AI Terminal Bridge Server running on port ${PORT}`);
+  console.log(`📡 WebSocket endpoint: ws://localhost:${PORT}`);
+  console.log(`🔗 Health check: http://localhost:${PORT}/health`);
+  console.log(`🔒 Persistent Claude terminal initialized: ${PERSISTENT_TERMINAL_ID}`);
+});
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('🔄 Shutting down terminals...');
+  
+  for (const [terminalId, session] of terminals.entries()) {
+    if (terminalId === PERSISTENT_TERMINAL_ID || session.persistent) {
+      console.log(`🔒 Preserving persistent terminal during shutdown: ${terminalId}`);
+      // Note: In a real production scenario, you might want to save state or gracefully close
+      // For now, let the container manage the terminal lifecycle
+    } else {
+      console.log(`🔚 Closing terminal: ${terminalId}`);
+      session.terminal.kill();
+    }
+  }
+  
+  process.exit(0);
+});
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});

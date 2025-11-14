@@ -1,3 +1,10 @@
+# Environment files - NEVER COMMIT
+.env
+.env.local
+.env.production
+.env.development
+*.env
+
 # Logs
 logs
 *.log

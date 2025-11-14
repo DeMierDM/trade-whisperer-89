@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Options WebSocket Test</title>
+</head>
+<body>
+    <h1>Live Options Data Test</h1>
+    <div id="status"></div>
+    <div id="options-data"></div>
+    
+    <script>
+        const ws = new WebSocket('ws://localhost:3001');
+        const statusDiv = document.getElementById('status');
+        const dataDiv = document.getElementById('options-data');
+        
+        let optionUpdateCount = 0;
+        let stockUpdateCount = 0;
+        
+        ws.onopen = () => {
+            statusDiv.innerHTML = '<span style="color: green;">✅ WebSocket Connected</span>';
+            console.log('WebSocket connected');
+        };
+        
+        ws.onmessage = (event) => {
+            try {
+                const message = JSON.parse(event.data);
+                
+                if (message.type === 'option_quote' || message.type === 'option_trade') {
+                    optionUpdateCount++;
+                    
+                    const optionData = message.data;
+                    console.log('📊 Options Update:', optionData);
+                    
+                    // Display recent options updates
+                    dataDiv.innerHTML = `
+                        <h3>Live Data Stream Status</h3>
+                        <p><strong>Option Updates:</strong> ${optionUpdateCount}</p>
+                        <p><strong>Stock Updates:</strong> ${stockUpdateCount}</p>
+                        <hr>
+                        <h4>Latest Option Update:</h4>
+                        <pre>${JSON.stringify(optionData, null, 2)}</pre>
+                    `;
+                }
+                
+                if (message.type === 'stock_quote') {
+                    stockUpdateCount++;
+                    
+                    // Update counters display
+                    const currentOptionsText = dataDiv.innerHTML.includes('Option Updates:') 
+                        ? dataDiv.innerHTML.replace(/Stock Updates: \d+/, `Stock Updates: ${stockUpdateCount}`)
+                        : `
+                            <h3>Live Data Stream Status</h3>
+                            <p><strong>Option Updates:</strong> ${optionUpdateCount}</p>
+                            <p><strong>Stock Updates:</strong> ${stockUpdateCount}</p>
+                            <p>Waiting for options data...</p>
+                        `;
+                    
+                    if (!dataDiv.innerHTML.includes('Latest Option Update:')) {
+                        dataDiv.innerHTML = currentOptionsText;
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Failed to parse WebSocket message:', error);
+            }
+        };
+        
+        ws.onclose = () => {
+            statusDiv.innerHTML = '<span style="color: red;">❌ WebSocket Disconnected</span>';
+        };
+        
+        ws.onerror = (error) => {
+            statusDiv.innerHTML = '<span style="color: red;">❌ WebSocket Error</span>';
+            console.error('WebSocket error:', error);
+        };
+        
+        // Display update every 2 seconds
+        setInterval(() => {
+            if (!dataDiv.innerHTML.includes('Latest Option Update:')) {
+                dataDiv.innerHTML = `
+                    <h3>Live Data Stream Status</h3>
+                    <p><strong>Option Updates:</strong> ${optionUpdateCount}</p>
+                    <p><strong>Stock Updates:</strong> ${stockUpdateCount}</p>
+                    <p>${optionUpdateCount > 0 ? '✅ Options data flowing!' : '⏳ Waiting for options data...'}</p>
+                `;
+            }
+        }, 2000);
+    </script>
+</body>
+</html>

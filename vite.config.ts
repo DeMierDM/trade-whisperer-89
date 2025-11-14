@@ -15,6 +15,20 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       port: 8080,
     },
+    proxy: {
+      "/api/bots": {
+        target: "http://trading_paper_bots:3005",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, '/api')
+      },
+      "/api": {
+        target: "http://trading_api:3001",
+        changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path.replace(/^\/api/, '/api')
+      }
+    }
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

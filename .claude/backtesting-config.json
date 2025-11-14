@@ -1,0 +1,44 @@
+{
+  "strikeFiltering": {
+    "enabled": true,
+    "strategy": "distance_from_atm",
+    "maxDistanceDollars": 5,
+    "strikeRangeMultiplier": 1,
+    "strikeSpacing": 5,
+    "comment": "Keep strikes within $5 of ATM (e.g., SPY at $569 → select 565, 570, 575)"
+  },
+  "greeksCalculation": {
+    "precision": 8,
+    "logDetailedDebug": true,
+    "validateInputs": true,
+    "comment": "Use 8 decimal places for Greeks to avoid rounding to zero"
+  },
+  "dataCache": {
+    "useSQL": true,
+    "fallbackToAPI": true,
+    "preCacheHistoricalData": true,
+    "cacheDateRange": {
+      "start": "2024-10-01",
+      "end": "2024-10-31",
+      "comment": "October 2024 data for backtesting"
+    }
+  },
+  "contractSelection": {
+    "minVolume": 100,
+    "maxSpreadPct": 5,
+    "preferredDTE": "0DTE",
+    "deltaTargets": {
+      "calls": {
+        "conservative": 0.30,
+        "moderate": 0.50,
+        "aggressive": 0.70
+      },
+      "puts": {
+        "conservative": -0.30,
+        "moderate": -0.50,
+        "aggressive": -0.70
+      }
+    },
+    "comment": "UPDATED: minVolume 1→100 for quality, maxSpread 15%→5% for better fills"
+  }
+}

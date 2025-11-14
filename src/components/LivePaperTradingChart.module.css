@@ -1,0 +1,38 @@
+.livePaperTradingChart {
+  position: relative;
+  width: 100%;
+}
+
+.tooltip {
+  position: absolute;
+  z-index: 50;
+  background-color: rgb(17 24 39 / 0.95);
+  border: 1px solid rgb(55 65 81);
+  border-radius: 0.5rem;
+  padding: 1rem;
+  box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+  max-width: 20rem;
+  left: var(--tooltip-x);
+  top: var(--tooltip-y);
+}
+
+.botContainer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid;
+}
+
+.botStats {
+  padding: 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid;
+}
+
+.legendDot {
+  width: 0.75rem;
+  height: 0.75rem;
+  border-radius: 9999px;
+}
