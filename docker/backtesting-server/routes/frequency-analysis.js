@@ -6,7 +6,7 @@
 
 const express = require('express');
 const router = express.Router();
-const AlpacaClient = require('../utils/alpaca-client');
+const alpacaClientManager = require('../utils/alpaca-client-manager');
 
 class SignalFrequencyAnalyzer {
     constructor() {
@@ -282,7 +282,7 @@ router.post('/frequency', async (req, res) => {
         const { symbol = 'IWM', startDate = '2024-12-01', endDate = '2024-12-31' } = req.body;
         
         const analyzer = new SignalFrequencyAnalyzer();
-        const alpacaClient = new AlpacaClient();
+        const alpacaClient = alpacaClientManager.getClient('backtest');
         const results = await analyzer.analyzeSignalFrequencies(symbol, startDate, endDate, alpacaClient);
         
         res.json({

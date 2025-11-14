@@ -6,7 +6,7 @@
 
 const express = require('express');
 const OptionsStockAnalyzer = require('../utils/options-stock-analyzer');
-const AlpacaClient = require('../utils/alpaca-client');
+const alpacaClientManager = require('../utils/alpaca-client-manager');
 
 const router = express.Router();
 
@@ -29,9 +29,9 @@ router.post('/symbol', async (req, res) => {
 
     console.log(`🔍 Starting analysis for ${symbol} (${startDate} to ${endDate})`);
 
-    // Initialize analyzer and Alpaca client
+    // Initialize analyzer and get singleton Alpaca client (TIER 0 Fix #2)
     const analyzer = new OptionsStockAnalyzer();
-    const alpacaClient = new AlpacaClient();
+    const alpacaClient = alpacaClientManager.getClient('backtest');
     
     // Run comprehensive analysis
     const analysisResults = await analyzer.analyzeSymbol(symbol, startDate, endDate, alpacaClient);
@@ -89,7 +89,7 @@ router.post('/quick', async (req, res) => {
     console.log(`⚡ Quick analysis for ${symbol} (last ${days} days)`);
 
     const analyzer = new OptionsStockAnalyzer();
-    const alpacaClient = new AlpacaClient();
+    const alpacaClient = alpacaClientManager.getClient('backtest');
     
     const analysisResults = await analyzer.analyzeSymbol(symbol, startDate, endDate, alpacaClient);
     
@@ -170,7 +170,7 @@ router.post('/compare', async (req, res) => {
     console.log(`🔄 Comparing analysis for ${symbols.join(', ')}`);
 
     const analyzer = new OptionsStockAnalyzer();
-    const alpacaClient = new AlpacaClient();
+    const alpacaClient = alpacaClientManager.getClient('backtest');
     
     const comparisons = {};
     

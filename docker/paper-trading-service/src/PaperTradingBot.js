@@ -5,6 +5,7 @@
 
 const EventEmitter = require('eventemitter3');
 const moment = require('moment-timezone');
+const ExpirationManager = require('./ExpirationManager'); // TIER 1 Fix #1
 
 class PaperTradingBot extends EventEmitter {
   constructor(components) {
@@ -19,6 +20,9 @@ class PaperTradingBot extends EventEmitter {
     // Bot management
     this.activeBots = new Map();
     this.running = false;
+    
+    // TIER 1 Fix #1: Initialize expiration manager for 0DTE auto-close
+    this.expirationManager = new ExpirationManager(this, console);
     
     // Market data tracking
     this.marketData = new Map();
@@ -42,6 +46,10 @@ class PaperTradingBot extends EventEmitter {
       
       // Set up periodic tasks
       this.setupPeriodicTasks();
+      
+      // TIER 1 Fix #1: Start 0DTE expiration monitoring
+      this.expirationManager.start();
+      console.log('✅ [PaperTradingBot] 0DTE expiration manager started');
       
       this.running = true;
       console.log('✅ [PaperTradingBot] Initialization complete');
@@ -796,7 +804,7 @@ class PaperTradingBot extends EventEmitter {
     try {
       // Get position details
       const positions = await this.databaseManager.getBotPositions(null);
-      const position = positions.find(p => p.position_id === positionId);
+      const position = positions.find(p => p.id === positionId);
       
       if (!position) {
         throw new Error(`Position not found: ${positionId}`);
@@ -804,12 +812,16 @@ class PaperTradingBot extends EventEmitter {
 
       // Close position with Alpaca
       const closeResult = await this.alpacaClient.closePosition(
-        position.option_symbol, 
+        position.contract_symbol, 
         reason
       );
 
-      // Update database
-      await this.databaseManager.closePosition(positionId, null, reason);
+      // Update database and create trade record
+      const tradeDetails = await this.databaseManager.closePosition(
+        positionId, 
+        closeResult.fillPrice || position.current_price, 
+        reason
+      );
 
       // Update bot active positions count
       const bot = this.activeBots.get(position.bot_id);
@@ -817,14 +829,30 @@ class PaperTradingBot extends EventEmitter {
         bot.activePositions = Math.max(0, (bot.activePositions || 1) - 1);
       }
 
-      // Broadcast update
+      // Broadcast position closed event
       this.broadcastUpdate('position_closed', {
+        botId: position.bot_id,
         positionId,
         reason,
-        closeResult
+        closeResult,
+        tradeDetails
       });
 
-      console.log(`✅ [PaperTradingBot] Position ${positionId} closed: ${reason}`);
+      // Broadcast trade completion event for live data streams
+      this.busClient.emit(`paper_trading.${position.underlying_symbol}.bot.${position.bot_id}.trades`, {
+        trade: {
+          id: tradeDetails.tradeId,
+          bot_id: position.bot_id,
+          contract_symbol: tradeDetails.contractSymbol,
+          side: tradeDetails.side,
+          quantity: tradeDetails.quantity,
+          fill_price: tradeDetails.fillPrice,
+          timestamp: new Date().toISOString(),
+          pnl: tradeDetails.pnl
+        }
+      });
+
+      console.log(`✅ [PaperTradingBot] Position ${positionId} closed: ${reason}, P&L: $${tradeDetails.pnl.toFixed(2)}`);
       
     } catch (error) {
       console.error(`❌ [PaperTradingBot] Error closing position ${positionId}:`, error);
@@ -1064,6 +1092,11 @@ class PaperTradingBot extends EventEmitter {
   async shutdown() {
     console.log('🛑 [PaperTradingBot] Shutting down...');
     
+    // TIER 1 Fix #1: Stop expiration manager
+    if (this.expirationManager) {
+      this.expirationManager.stop();
+    }
+    
     this.running = false;
     
     // Clear intervals
@@ -1084,6 +1117,52 @@ class PaperTradingBot extends EventEmitter {
     }
     
     console.log('✅ [PaperTradingBot] Shutdown complete');
+  }
+
+  /**
+   * TIER 1 Fix #1: Helper methods for ExpirationManager
+   */
+  
+  /**
+   * Get all open positions across all bots
+   */
+  async getOpenPositions() {
+    try {
+      const result = await this.databaseManager.query(
+        `SELECT * FROM paper_bot_positions WHERE status = 'open'`
+      );
+      return result.rows || [];
+    } catch (error) {
+      console.error('❌ [PaperTradingBot] Error getting open positions:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Submit order through Alpaca client
+   */
+  async submitOrder(order) {
+    try {
+      const result = await this.alpacaClient.submitOrder(order);
+      return result;
+    } catch (error) {
+      console.error('❌ [PaperTradingBot] Error submitting order:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get bot ID (for logging)
+   */
+  get id() {
+    return 'paper-trading-orchestrator';
+  }
+
+  /**
+   * Get database connection (for logging)
+   */
+  get db() {
+    return this.databaseManager;
   }
 }
 

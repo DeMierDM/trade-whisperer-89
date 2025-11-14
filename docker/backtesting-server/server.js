@@ -18,19 +18,26 @@ const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 });
 
-// Initialize Alpaca Client
-const AlpacaClient = require('./utils/alpaca-client.js');
+// Initialize Alpaca Client Manager (TIER 0 Fix #2 - Singleton Pattern)
+const alpacaClientManager = require('./utils/alpaca-client-manager');
 let alpacaClient = null;
 
-try {
-  alpacaClient = new AlpacaClient({
-    apiKey: process.env.ALPACA_PAPER_API_KEY || process.env.ALPACA_LIVE_API_KEY,
-    apiSecret: process.env.ALPACA_PAPER_API_SECRET || process.env.ALPACA_LIVE_API_SECRET
-  });
-  console.log('✅ Alpaca client initialized successfully');
-} catch (error) {
-  console.error('❌ Failed to initialize Alpaca client:', error.message);
-  console.error('   Backtesting functionality will be limited');
+// Initialize at startup - will be done after server starts listening
+async function initializeAlpacaClient() {
+  try {
+    await alpacaClientManager.initialize({
+      paperKeyId: process.env.ALPACA_PAPER_API_KEY,
+      paperSecretKey: process.env.ALPACA_PAPER_API_SECRET,
+      liveKeyId: process.env.ALPACA_LIVE_API_KEY,
+      liveSecretKey: process.env.ALPACA_LIVE_API_SECRET
+    });
+    // Get backtest client as default
+    alpacaClient = alpacaClientManager.getClient('backtest');
+    console.log('✅ Alpaca client manager initialized successfully');
+  } catch (error) {
+    console.error('❌ Failed to initialize Alpaca client manager:', error.message);
+    console.error('   Backtesting functionality will be limited');
+  }
 }
 
 // Middleware
@@ -1161,7 +1168,7 @@ app.post('/api/backtest/run', async (req, res) => {
     const startMs = new Date(startDate).getTime();
     const endMs = new Date(endDate).getTime();
     const daysDiff = Math.max(1, (endMs - startMs) / (1000 * 60 * 60 * 24));
-    const estimatedSeconds = Math.ceil(daysDiff * 10 + 15); // ~10s per day + 15s base
+    const estimatedSeconds = Math.ceil(daysDiff * 1 + 3); // ~10s per day + 15s base
 
     console.log(`⏱️  [BACKTEST] Estimated completion: ${estimatedSeconds}s`);
 
@@ -1209,8 +1216,16 @@ app.post('/api/backtest/run', async (req, res) => {
           deltaTarget: parameters.deltaTarget || 0.30
         });
         
-        const BacktestEngine = require('./engine/backtest-engine.js');
-        const engine = new BacktestEngine(pool, alpacaClient, { strikeRange, strikeSpacing });
+        // 🏎️ TURBO MODE: Only use high-performance engine
+const TurboBacktestEngine = require('./engine/turbo-backtest-engine');
+        // 🏎️ TURBO MODE: Using high-performance engine
+        const engine = new TurboBacktestEngine(pool, alpacaClient, { 
+          strikeRange, 
+          strikeSpacing,
+          enableTurboMode: true,
+          maxWorkers: 8,
+          batchSize: 100
+        });
 
         const result = await engine.runBacktest({
           backtestId,
@@ -1334,6 +1349,57 @@ app.get('/api/backtest/status/:id', async (req, res) => {
 
   } catch (error) {
     console.error('❌ [BACKTEST] Error fetching backtest status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Cancel a running backtest
+ * POST /api/backtest/:id/cancel
+ */
+app.post('/api/backtest/:id/cancel', async (req, res) => {
+  try {
+    const backtestId = req.params.id;
+
+    // Check if backtest exists and is running
+    const checkResult = await pool.query(`
+      SELECT id, status, strategy_name, symbol 
+      FROM backtests 
+      WHERE id = $1
+    `, [backtestId]);
+
+    if (checkResult.rows.length === 0) {
+      return res.status(404).json({ error: 'Backtest not found' });
+    }
+
+    const backtest = checkResult.rows[0];
+    
+    if (backtest.status !== 'running') {
+      return res.status(400).json({ 
+        error: `Cannot cancel backtest with status '${backtest.status}'`,
+        currentStatus: backtest.status
+      });
+    }
+
+    // Update status to cancelled
+    const updateResult = await pool.query(`
+      UPDATE backtests 
+      SET status = 'cancelled', 
+          completed_at = NOW(),
+          error_message = 'Cancelled by user'
+      WHERE id = $1
+      RETURNING *
+    `, [backtestId]);
+
+    console.log(`🚫 [BACKTEST] Cancelled backtest ${backtestId} (${backtest.strategy_name}/${backtest.symbol})`);
+
+    res.json({
+      message: 'Backtest cancelled successfully',
+      backtest: updateResult.rows[0]
+    });
+
+  } catch (error) {
+    console.error('❌ [BACKTEST] Error cancelling backtest:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -1896,9 +1962,13 @@ app.post('/api/optimize/havwap', async (req, res) => {
     
     console.log(`✅ [OPTIMIZATION] Using configured Alpaca client`);
     
-    // Create BacktestEngine with server resources
-    const BacktestEngine = require('./engine/backtest-engine');
-    const engine = new BacktestEngine(pool, alpacaClient);
+    // 🏎️ TURBO MODE: Using high-performance engine for optimization
+    const TurboBacktestEngine = require('./engine/turbo-backtest-engine');
+    const engine = new TurboBacktestEngine(pool, alpacaClient, {
+      enableTurboMode: true,
+      maxWorkers: 8,
+      batchSize: 100
+    });
     
     const optimizationId = Date.now();
     
@@ -1983,13 +2053,21 @@ app.post('/api/backtest/parallel', async (req, res) => {
     } = req.body;
 
     console.log(`\n🏎️ [PARALLEL BACKTEST] Starting enhanced parallel backtest:`);
-    console.log(`   Strategy: ${strategy}`);
+    console.log(`   Strategy: ${strategy} (${typeof strategy})`);
     console.log(`   Symbol: ${symbol}`);
     console.log(`   Date Range: ${startDate} to ${endDate}`);
     console.log(`   Workers: ${enableParallel ? maxWorkers : 1}`);
     console.log(`   Initial Capital: $${initialCapital.toLocaleString()}`);
     
-    // Create backtest record (using existing schema)
+    // 🚨 DEBUG: Check if strategy is null/undefined
+    if (!strategy || strategy.trim() === '') {
+      console.error(`❌ [PARALLEL BACKTEST] Strategy is null/undefined/empty:`, { strategy, type: typeof strategy });
+      return res.status(400).json({ 
+        error: 'Strategy name is required and cannot be empty',
+        received: strategy,
+        type: typeof strategy
+      });
+    }
     const backtestResult = await pool.query(`
       INSERT INTO backtests (
         strategy_name, symbol, start_date, end_date, 
@@ -2110,11 +2188,18 @@ app.post('/api/backtest/parallel', async (req, res) => {
             await multiWorkerEngine.cleanup();
             
           } catch (multiWorkerError) {
-            console.error(`⚠️ [PARALLEL BACKTEST ${backtestId}] Multi-worker failed, falling back to standard engine:`, multiWorkerError.message);
+            console.error(`⚠️ [PARALLEL BACKTEST ${backtestId}] Multi-worker failed, falling back to TurboBacktestEngine:`, multiWorkerError.message);
             
-            // Fallback to standard engine
-            const BacktestEngine = require('./engine/backtest-engine.js');
-            const engine = new BacktestEngine(pool, alpacaClient, { strikeRange, strikeSpacing });
+            // Fallback to 🏎️ TURBO ENGINE (still much faster than old engine)
+            // 🏎️ TURBO MODE: Using high-performance engine
+            const TurboBacktestEngine = require('./engine/turbo-backtest-engine');
+            const engine = new TurboBacktestEngine(pool, alpacaClient, { 
+              strikeRange, 
+              strikeSpacing,
+              enableTurboMode: true,
+              maxWorkers: 8,
+              batchSize: 100 
+            });
 
             result = await engine.runBacktest({
               backtestId,
@@ -2130,11 +2215,18 @@ app.post('/api/backtest/parallel', async (req, res) => {
           }
           
         } else {
-          // Use standard engine for single day or when parallel disabled
-          console.log(`📊 [PARALLEL BACKTEST ${backtestId}] Using standard engine (parallel disabled or short timeframe)`);
+          // Use 🏎️ TURBO ENGINE for single day or when parallel disabled
+          console.log(`📊 [PARALLEL BACKTEST ${backtestId}] Using TurboBacktestEngine (parallel disabled or short timeframe)`);
           
-          const BacktestEngine = require('./engine/backtest-engine.js');
-          const engine = new BacktestEngine(pool, alpacaClient, { strikeRange, strikeSpacing });
+          // 🏎️ TURBO MODE: Using high-performance engine
+          const TurboBacktestEngine = require('./engine/turbo-backtest-engine');
+          const engine = new TurboBacktestEngine(pool, alpacaClient, { 
+            strikeRange, 
+            strikeSpacing,
+            enableTurboMode: true,
+            maxWorkers: 8,
+            batchSize: 100 
+          });
 
           result = await engine.runBacktest({
             backtestId,
@@ -2250,11 +2342,15 @@ console.log(`   POST /api/backtest/parallel - Multi-worker parallel backtesting`
 console.log(`   GET /api/system/performance - System performance metrics`);
 
 // Start server
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Backtesting Server running on port ${PORT}`);
   console.log(`📊 Dedicated to historical data processing and backtesting operations`);
   console.log(`🔗 Health check: http://localhost:${PORT}/health`);
   console.log(`🌐 Network access: http://0.0.0.0:${PORT}/health`);
+  
+  // Initialize Alpaca client manager after server starts (TIER 0 Fix #2)
+  await initializeAlpacaClient();
+  
   console.log(`\n🏎️ [ENHANCED] Multi-worker parallel processing available:`);
   console.log(`   POST /api/backtest/parallel - Parallel backtesting with ${os.cpus().length} cores`);
   console.log(`   GET /api/system/performance - Hardware performance metrics`);
