@@ -1,18 +1,21 @@
 /**
  * Alpaca Client Manager - Singleton Pattern
  * 
- * PROBLEM SOLVED: Per-request AlpacaClient instantiation causing:
- * - Memory leaks
+ * TIER 0.2: Per-request AlpacaClient instantiation prevention
+ * TIER 0.3: Uses UnifiedAlpacaClient (merged 3 duplicate clients)
+ * 
+ * PROBLEMS SOLVED:
+ * - Memory leaks from per-request instantiation
  * - Connection pool exhaustion
  * - Rate limiting issues
- * - Performance degradation
+ * - Code duplication (3 separate client implementations merged)
  * 
- * SOLUTION: Single client instance reused across all requests
+ * SOLUTION: Single UnifiedAlpacaClient instance per mode (BACKTEST/LIVE/MOCK)
  * 
- * From ARCHITECTURAL_AUDIT_BRUTAL_HONEST.md TIER 0 Issue #2
+ * From ARCHITECTURAL_AUDIT_BRUTAL_HONEST.md TIER 0 Issues #2 & #3
  */
 
-const AlpacaClient = require('./alpaca-client');
+const UnifiedAlpacaClient = require('../../shared/UnifiedAlpacaClient');
 
 class AlpacaClientManager {
   constructor() {
@@ -34,32 +37,34 @@ class AlpacaClientManager {
       return;
     }
 
-    console.log('🔧 [ALPACA CLIENT MANAGER] Initializing singleton clients...');
+    console.log('🔧 [ALPACA CLIENT MANAGER] Initializing UnifiedAlpacaClient singleton...');
 
     try {
-      // Create backtest client (uses paper trading keys but in backtest mode)
-      this.clients.backtest = new AlpacaClient({
-        keyId: config.paperKeyId || process.env.ALPACA_PAPER_API_KEY,
-        secretKey: config.paperSecretKey || process.env.ALPACA_PAPER_API_SECRET,
-        mode: 'backtest'
+      // Create BACKTEST mode client
+      this.clients.backtest = new UnifiedAlpacaClient({
+        mode: 'BACKTEST',
+        apiKey: config.paperKeyId || process.env.ALPACA_PAPER_API_KEY,
+        apiSecret: config.paperSecretKey || process.env.ALPACA_PAPER_API_SECRET
       });
+      await this.clients.backtest.initialize();
 
-      // Create live trading client
-      this.clients.live = new AlpacaClient({
-        keyId: config.liveKeyId || process.env.ALPACA_LIVE_API_KEY,
-        secretKey: config.liveSecretKey || process.env.ALPACA_LIVE_API_SECRET,
-        mode: 'live'
+      // Create LIVE mode client (paper trading)
+      this.clients.live = new UnifiedAlpacaClient({
+        mode: 'LIVE',
+        apiKey: config.liveKeyId || process.env.ALPACA_LIVE_API_KEY || process.env.ALPACA_PAPER_API_KEY,
+        apiSecret: config.liveSecretKey || process.env.ALPACA_LIVE_API_SECRET || process.env.ALPACA_PAPER_API_SECRET,
+        paper: true
       });
+      await this.clients.live.initialize();
 
-      // Create paper trading client
-      this.clients.paper = new AlpacaClient({
-        keyId: config.paperKeyId || process.env.ALPACA_PAPER_API_KEY,
-        secretKey: config.paperSecretKey || process.env.ALPACA_PAPER_API_SECRET,
-        mode: 'paper'
+      // Create MOCK mode client for testing
+      this.clients.mock = new UnifiedAlpacaClient({
+        mode: 'MOCK'
       });
+      await this.clients.mock.initialize();
 
       this.initialized = true;
-      console.log('✅ [ALPACA CLIENT MANAGER] All clients initialized successfully');
+      console.log('✅ [ALPACA CLIENT MANAGER] All UnifiedAlpacaClient instances initialized');
 
       // Add health check monitoring
       this.startHealthMonitoring();
@@ -70,18 +75,21 @@ class AlpacaClientManager {
   }
 
   /**
-   * Get appropriate client for the request context
-   * @param {string} mode - 'backtest', 'live', or 'paper'
-   * @returns {AlpacaClient} Singleton client instance
+   * Get appropriate UnifiedAlpacaClient for the request context
+   * @param {string} mode - 'backtest', 'live', 'paper', or 'mock'
+   * @returns {UnifiedAlpacaClient} Singleton client instance
    */
   getClient(mode = 'backtest') {
     if (!this.initialized) {
       throw new Error('AlpacaClientManager not initialized. Call initialize() at server startup.');
     }
 
-    const client = this.clients[mode];
+    // Map 'paper' to 'live' for backwards compatibility
+    const clientMode = mode === 'paper' ? 'live' : mode;
+
+    const client = this.clients[clientMode];
     if (!client) {
-      throw new Error(`Unknown client mode: ${mode}. Valid modes: backtest, live, paper`);
+      throw new Error(`Unknown client mode: ${mode}. Valid modes: backtest, live, paper, mock`);
     }
 
     return client;
@@ -96,12 +104,16 @@ class AlpacaClientManager {
         if (!client) continue;
 
         try {
-          // Simple health check - attempt to get account info
-          // This will fail if connection is dead
-          await client.getAccount();
+          // Health check - testConnection for BACKTEST, isConnected for LIVE/MOCK
+          if (mode === 'backtest') {
+            await client.testConnection();
+          } else {
+            if (!client.isConnected()) {
+              console.warn(`⚠️ [ALPACA CLIENT MANAGER] ${mode} client disconnected`);
+            }
+          }
         } catch (error) {
           console.error(`⚠️ [ALPACA CLIENT MANAGER] ${mode} client unhealthy:`, error.message);
-          // In production, might want to attempt reconnection here
         }
       }
     }, 60000); // Check every 60 seconds
