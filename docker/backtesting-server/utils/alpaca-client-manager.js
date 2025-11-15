@@ -15,14 +15,14 @@
  * From ARCHITECTURAL_AUDIT_BRUTAL_HONEST.md TIER 0 Issues #2 & #3
  */
 
-const UnifiedAlpacaClient = require('../../shared/UnifiedAlpacaClient');
+const UnifiedAlpacaClient = require('../../shared/UnifiedAlpacaClient.cjs');
 
 class AlpacaClientManager {
   constructor() {
     this.clients = {
       backtest: null,
       live: null,
-      paper: null
+      mock: null
     };
     this.initialized = false;
   }
